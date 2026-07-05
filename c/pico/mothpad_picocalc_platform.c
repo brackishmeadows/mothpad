@@ -193,17 +193,6 @@ static const uint8_t *glyph5x7(char ch)
     unsigned char code = (unsigned char)ch;
     static const uint8_t blank[GLYPH_HEIGHT] = {0, 0, 0, 0, 0, 0, 0};
     static const uint8_t unknown[GLYPH_HEIGHT] = {14, 17, 1, 2, 4, 0, 4};
-    static const uint8_t menu_tl[GLYPH_HEIGHT] = {0, 0, 15, 8, 8, 8, 8};
-    static const uint8_t menu_tr[GLYPH_HEIGHT] = {0, 0, 30, 2, 2, 2, 2};
-    static const uint8_t menu_bl[GLYPH_HEIGHT] = {8, 8, 8, 8, 15, 0, 0};
-    static const uint8_t menu_br[GLYPH_HEIGHT] = {2, 2, 2, 2, 30, 0, 0};
-    static const uint8_t menu_h[GLYPH_HEIGHT] = {0, 0, 31, 0, 0, 0, 0};
-    static const uint8_t menu_v[GLYPH_HEIGHT] = {2, 2, 2, 2, 2, 2, 2};
-    static const uint8_t bat0[GLYPH_HEIGHT] = {0, 14, 17, 17, 17, 14, 0};
-    static const uint8_t bat25[GLYPH_HEIGHT] = {0, 14, 25, 25, 25, 14, 0};
-    static const uint8_t bat50[GLYPH_HEIGHT] = {0, 14, 29, 29, 29, 14, 0};
-    static const uint8_t bat75[GLYPH_HEIGHT] = {0, 14, 31, 31, 31, 14, 0};
-    static const uint8_t bat100[GLYPH_HEIGHT] = {0, 31, 31, 31, 31, 31, 0};
     static const uint8_t bang[GLYPH_HEIGHT] = {4, 4, 4, 4, 4, 0, 4};
     static const uint8_t quote[GLYPH_HEIGHT] = {10, 10, 10, 0, 0, 0, 0};
     static const uint8_t hash[GLYPH_HEIGHT] = {18, 18, 63, 18, 63, 18, 18};
@@ -300,17 +289,6 @@ static const uint8_t *glyph5x7(char ch)
 
     switch(code)
     {
-        case 0x80: return menu_tl;
-        case 0x81: return menu_tr;
-        case 0x82: return menu_bl;
-        case 0x83: return menu_br;
-        case 0x84: return menu_h;
-        case 0x85: return menu_v;
-        case 0x86: return bat0;
-        case 0x87: return bat25;
-        case 0x88: return bat50;
-        case 0x89: return bat75;
-        case 0x8a: return bat100;
         case ' ': return blank;
         case '!': return bang;
         case '"': return quote;
@@ -412,6 +390,45 @@ static const uint8_t *glyph5x7(char ch)
         case 'Y': return Y;
         case 'Z': return Z;
         default: return unknown;
+    }
+}
+
+static const uint8_t *glyph8x12(unsigned char code)
+{
+    static const uint8_t menu_tl[CELL_HEIGHT] = {0, 31, 31, 24, 24, 24, 24, 24, 24, 24, 24, 24};
+    static const uint8_t menu_tr[CELL_HEIGHT] = {0, 248, 248, 28, 28, 26, 26, 26, 26, 26, 26, 26};
+    static const uint8_t menu_bl[CELL_HEIGHT] = {24, 24, 24, 24, 24, 24, 31, 15, 8, 7, 7, 0};
+    static const uint8_t menu_br[CELL_HEIGHT] = {26, 26, 26, 26, 26, 26, 250, 250, 2, 254, 254, 0};
+    static const uint8_t menu_ht[CELL_HEIGHT] = {0, 255, 255, 0, 0, 0, 0, 0, 0, 0, 0, 0};
+    static const uint8_t menu_vl[CELL_HEIGHT] = {24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24};
+    static const uint8_t menu_hb[CELL_HEIGHT] = {0, 0, 0, 0, 0, 0, 255, 255, 0, 255, 255, 0};
+    static const uint8_t menu_vr[CELL_HEIGHT] = {26, 26, 26, 26, 26, 26, 26, 26, 26, 26, 26, 26};
+    static const uint8_t bat_l0[CELL_HEIGHT] = {0, 0, 127, 128, 128, 128, 128, 128, 128, 128, 127, 0};
+    static const uint8_t bat_l50[CELL_HEIGHT] = {0, 0, 127, 128, 176, 176, 176, 176, 176, 128, 127, 0};
+    static const uint8_t bat_l100[CELL_HEIGHT] = {0, 0, 127, 128, 182, 182, 182, 182, 182, 128, 127, 0};
+    static const uint8_t bat_r0[CELL_HEIGHT] = {0, 0, 252, 2, 2, 2, 2, 2, 2, 2, 252, 0};
+    static const uint8_t bat_r50[CELL_HEIGHT] = {0, 0, 252, 2, 194, 194, 194, 194, 194, 2, 252, 0};
+    static const uint8_t bat_r100[CELL_HEIGHT] = {0, 0, 252, 2, 218, 218, 218, 218, 218, 2, 252, 0};
+    static const uint8_t bat_charge[CELL_HEIGHT] = {0, 0, 12, 24, 48, 96, 126, 6, 12, 24, 0, 0};
+
+    switch(code)
+    {
+        case 0x80: return menu_tl;
+        case 0x81: return menu_tr;
+        case 0x82: return menu_bl;
+        case 0x83: return menu_br;
+        case 0x84: return menu_ht;
+        case 0x85: return menu_vl;
+        case 0x86: return menu_hb;
+        case 0x87: return menu_vr;
+        case 0x88: return bat_l0;
+        case 0x89: return bat_l50;
+        case 0x8a: return bat_l100;
+        case 0x8b: return bat_r0;
+        case 0x8c: return bat_r50;
+        case 0x8d: return bat_r100;
+        case 0x8e: return bat_charge;
+        default: return NULL;
     }
 }
 
@@ -576,8 +593,10 @@ void picocalc_lcd_put_char(char ch, int flush)
     uint8_t fg[3];
     uint8_t bg[3];
     const uint8_t *glyph;
+    const uint8_t *glyph8;
     int glyph_width;
     int pixel_bytes;
+    int private_glyph;
     (void)flush;
 
     if(ch == '\t') ch = ' ';
@@ -585,7 +604,9 @@ void picocalc_lcd_put_char(char ch, int flush)
 
     pixel_bytes = lcd_color_bytes(g_lcd_fg, fg);
     (void)lcd_color_bytes(g_lcd_bg, bg);
-    glyph = glyph5x7(ch);
+    glyph8 = glyph8x12((unsigned char)ch);
+    private_glyph = glyph8 != NULL;
+    glyph = private_glyph ? NULL : glyph5x7(ch);
     glyph_width = (ch == '@' || ch == '#') ? 6 : GLYPH_WIDTH;
 
     for(int y = 0; y < CELL_HEIGHT; ++y)
@@ -593,13 +614,20 @@ void picocalc_lcd_put_char(char ch, int flush)
         for(int x = 0; x < CELL_WIDTH; ++x)
         {
             int lit = 0;
-            int gx = x - 1;
-            int gy = y - 2;
-            if(gx >= 0 && gy >= 0 && gy < GLYPH_HEIGHT)
+            if(private_glyph)
             {
-                if(gx < glyph_width)
+                lit = (glyph8[y] & (1 << (CELL_WIDTH - 1 - x))) != 0;
+            }
+            else
+            {
+                int gx = x - 1;
+                int gy = y - 2;
+                if(gx >= 0 && gy >= 0 && gy < GLYPH_HEIGHT)
                 {
-                    lit = (glyph[gy] & (1 << (glyph_width - 1 - gx))) != 0;
+                    if(gx < glyph_width)
+                    {
+                        lit = (glyph[gy] & (1 << (glyph_width - 1 - gx))) != 0;
+                    }
                 }
             }
             uint8_t *dst = &pixels[(y * CELL_WIDTH + x) * pixel_bytes];

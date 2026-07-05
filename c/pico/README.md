@@ -122,10 +122,17 @@ The File menu currently offers New, Open, Save, Save As, and Reboot. Reboot is
 refused while the buffer is dirty and shows `Save first`; on a clean buffer it
 uses the Pico SDK watchdog reboot path.
 
-The top-right status uses private LCD glyph codes for a 25%-step battery icon.
-Those glyphs are defined in `mothpad_picocalc_platform.h` and rendered only by
-the PicoCalc platform shim; they are not file text and are not part of the core
-editor model.
+The top-right status uses private LCD glyph codes for a two-cell, 25%-step
+battery icon. Those glyphs are defined in `mothpad_picocalc_platform.h` and
+rendered only by the PicoCalc platform shim; they are not file text and are not
+part of the core editor model. Normal text glyphs render as padded 5x7 shapes
+inside an 8x12 cell; private UI glyphs render stretched across the full 8x12
+cell so menu borders and battery halves can connect across adjacent cells.
+The editable source atlas for those private UI glyphs is
+`../../docs/glyph-previews/mothpad-ui-glyph-atlas-fullcell-raw.bmp`.
+The battery state is polled four times per second so the charging glyph can
+appear or disappear shortly after USB power is connected or removed, subject to
+whatever delay the keyboard controller applies to its charging bit.
 
 ## Hardware Notes
 

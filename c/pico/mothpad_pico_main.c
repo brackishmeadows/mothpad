@@ -43,7 +43,7 @@ extern struct dirent *readdir(DIR *dir);
 
 #define MOTH_MAX_DIR_ENTRIES   96
 #define MOTH_MESSAGE_MS        1800
-#define MOTH_BATTERY_MS        60000
+#define MOTH_BATTERY_MS        250
 
 typedef enum {
     PICO_MODE_EDITING = 0,
@@ -99,7 +99,8 @@ static int g_file_menu_selected;
 
 static int mothpad_pico_color(uint8_t color)
 {
-    return color ? PICOCALC_COLOR_WHITE : PICOCALC_COLOR_BLACK;
+    if(color == 0) return PICOCALC_COLOR_BLACK;
+    return PICOCALC_COLOR_WHITE;
 }
 
 static void pico_set_message(const char *message)
@@ -199,9 +200,9 @@ static void pico_draw_text(int x, int y, const char *text, uint8_t fg, uint8_t b
     }
 }
 
-static void pico_draw_hline(int x, int y, int width, uint8_t fg, uint8_t bg, uint8_t flags)
+static void pico_draw_hline(int x, int y, int width, char ch, uint8_t fg, uint8_t bg, uint8_t flags)
 {
-    for(int i = 0; i < width; ++i) pico_put_cell(x + i, y, PICOCALC_GLYPH_MENU_H, fg, bg, flags);
+    for(int i = 0; i < width; ++i) pico_put_cell(x + i, y, ch, fg, bg, flags);
 }
 
 static void pico_draw_bottom_message(void)
@@ -228,24 +229,47 @@ static void pico_draw_battery(void)
 {
     char text[12];
     int x;
-    char icon = PICOCALC_GLYPH_BAT_0;
+    char left = PICOCALC_GLYPH_BAT_L_0;
+    char right = PICOCALC_GLYPH_BAT_R_0;
+    char charge = ' ';
 
     if(g_battery_percent < 0)
     {
-        snprintf(text, sizeof(text), " --");
+        snprintf(text, sizeof(text), "--");
     }
     else
     {
-        if(g_battery_percent >= 88) icon = PICOCALC_GLYPH_BAT_100;
-        else if(g_battery_percent >= 63) icon = PICOCALC_GLYPH_BAT_75;
-        else if(g_battery_percent >= 38) icon = PICOCALC_GLYPH_BAT_50;
-        else if(g_battery_percent >= 13) icon = PICOCALC_GLYPH_BAT_25;
-        snprintf(text, sizeof(text), "%c%3d%%", g_battery_charging ? '+' : ' ', g_battery_percent);
+        if(g_battery_percent >= 88)
+        {
+            left = PICOCALC_GLYPH_BAT_L_100;
+            right = PICOCALC_GLYPH_BAT_R_100;
+        }
+        else if(g_battery_percent >= 63)
+        {
+            left = PICOCALC_GLYPH_BAT_L_100;
+            right = PICOCALC_GLYPH_BAT_R_50;
+        }
+        else if(g_battery_percent >= 38)
+        {
+            left = PICOCALC_GLYPH_BAT_L_100;
+            right = PICOCALC_GLYPH_BAT_R_0;
+        }
+        else if(g_battery_percent >= 13)
+        {
+            left = PICOCALC_GLYPH_BAT_L_50;
+            right = PICOCALC_GLYPH_BAT_R_0;
+        }
+        if(g_battery_charging) charge = PICOCALC_GLYPH_BAT_CHARGE;
+        snprintf(text, sizeof(text), "%d%%", g_battery_percent);
     }
 
-    x = MOTH_COLS - 1 - (int)strlen(text);
-    pico_put_cell(x, MOTH_TOP_ROW, icon, 0, 7, MOTH_CELL_STATUS);
-    pico_draw_text(x + 1, MOTH_TOP_ROW, text, 0, 7, MOTH_CELL_STATUS);
+    x = MOTH_COLS - (int)strlen(text) - 4;
+    pico_draw_text(x, MOTH_TOP_ROW, text, 0, 7, MOTH_CELL_STATUS);
+    x += (int)strlen(text);
+    pico_put_cell(x++, MOTH_TOP_ROW, ' ', 0, 7, MOTH_CELL_STATUS);
+    pico_put_cell(x++, MOTH_TOP_ROW, left, 0, 7, MOTH_CELL_STATUS);
+    pico_put_cell(x++, MOTH_TOP_ROW, right, 0, 7, MOTH_CELL_STATUS);
+    pico_put_cell(x, MOTH_TOP_ROW, charge, 0, 7, MOTH_CELL_STATUS);
 }
 
 static void pico_render_editing(void)
@@ -309,24 +333,24 @@ static void pico_render_file_menu(void)
     pico_render_editing();
     pico_draw_text(0, MOTH_TOP_ROW, " File ", 7, 0, MOTH_CELL_STATUS);
 
-    pico_put_cell(x, y, PICOCALC_GLYPH_MENU_TL, 0, 7, MOTH_CELL_STATUS);
-    pico_draw_hline(x + 1, y, width - 2, 0, 7, MOTH_CELL_STATUS);
-    pico_put_cell(x + width - 1, y, PICOCALC_GLYPH_MENU_TR, 0, 7, MOTH_CELL_STATUS);
+    pico_put_cell(x, y, PICOCALC_GLYPH_MENU_TL, 7, 0, MOTH_CELL_STATUS);
+    pico_draw_hline(x + 1, y, width - 2, PICOCALC_GLYPH_MENU_HT, 7, 0, MOTH_CELL_STATUS);
+    pico_put_cell(x + width - 1, y, PICOCALC_GLYPH_MENU_TR, 7, 0, MOTH_CELL_STATUS);
     for(int i = 0; i < count; ++i)
     {
         int row = y + 1 + i;
-        uint8_t fg = (i == g_file_menu_selected) ? 7 : 0;
-        uint8_t bg = (i == g_file_menu_selected) ? 0 : 7;
+        uint8_t fg = (i == g_file_menu_selected) ? 0 : 7;
+        uint8_t bg = (i == g_file_menu_selected) ? 7 : 0;
         uint8_t flags = (i == g_file_menu_selected) ? MOTH_CELL_SELECTION : MOTH_CELL_STATUS;
 
         for(int col = 0; col < width; ++col) pico_put_cell(x + col, row, ' ', fg, bg, flags);
-        pico_put_cell(x, row, PICOCALC_GLYPH_MENU_V, fg, bg, flags);
-        pico_put_cell(x + width - 1, row, PICOCALC_GLYPH_MENU_V, fg, bg, flags);
+        pico_put_cell(x, row, PICOCALC_GLYPH_MENU_VL, 7, 0, flags);
+        pico_put_cell(x + width - 1, row, PICOCALC_GLYPH_MENU_VR, 7, 0, flags);
         pico_draw_text(x + 2, row, g_file_menu_items[i], fg, bg, flags);
     }
-    pico_put_cell(x, y + count + 1, PICOCALC_GLYPH_MENU_BL, 0, 7, MOTH_CELL_STATUS);
-    pico_draw_hline(x + 1, y + count + 1, width - 2, 0, 7, MOTH_CELL_STATUS);
-    pico_put_cell(x + width - 1, y + count + 1, PICOCALC_GLYPH_MENU_BR, 0, 7, MOTH_CELL_STATUS);
+    pico_put_cell(x, y + count + 1, PICOCALC_GLYPH_MENU_BL, 7, 0, MOTH_CELL_STATUS);
+    pico_draw_hline(x + 1, y + count + 1, width - 2, PICOCALC_GLYPH_MENU_HB, 7, 0, MOTH_CELL_STATUS);
+    pico_put_cell(x + width - 1, y + count + 1, PICOCALC_GLYPH_MENU_BR, 7, 0, MOTH_CELL_STATUS);
 }
 
 static void pico_render(void)
