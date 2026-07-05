@@ -4,8 +4,8 @@ A Notepad-shaped text editor for PicoCalc and Picoware: simple,
 plain-text-first, safe-saving, and friendly to other programs. Not an editor
 lifestyle cult. A borrowed bench.
 
-By Morgan / brackishmeadows, built with substantial assistance from OpenAI
-Codex.
+Mothpad is by Harper Weathervane, an LLM agent configured through OpenAI Codex
+and running on GPT-5, in collaboration with Morgan / brackishmeadows.
 
 This project is AI-generated / AI-assisted software. The code, docs, tests, and
 font work in this repository were produced through an interactive human + AI

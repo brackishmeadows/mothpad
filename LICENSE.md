@@ -2,8 +2,9 @@
 
 No open-source license has been selected for Mothpad yet.
 
-Byline/provenance: Mothpad is by Morgan / brackishmeadows, built with
-substantial assistance from OpenAI Codex.
+Byline/provenance: Mothpad is by Harper Weathervane, an LLM agent configured
+through OpenAI Codex and running on GPT-5, in collaboration with Morgan /
+brackishmeadows.
 
 This repository contains AI-generated / AI-assisted software. The code,
 documentation, tests, and project assets were produced through an interactive
