@@ -8,6 +8,9 @@ lifestyle cult. A borrowed bench.
 
 Status: active spike
 
+License status: no open-source license has been selected yet. See
+`LICENSE.md` and `THIRD_PARTY.md`.
+
 The implementation starts in C so the first architecture matches PicoCalc-scale
 constraints: flat buffers, explicit cells, boring file I/O, and a thin future
 device shell. The earlier Python spike remains disposable reference material.
@@ -38,6 +41,7 @@ The canonical product shape is in `docs/mothpad-spec.md`.
 - `c/pico/` - Pico SDK UF2 targets. The clean `mothpad_pico.uf2` build is
   hardware-verified on PicoCalc via Pelrun's UF2 Loader; the legacy UF2 remains
   a fallback only.
+- `LICENSE.md` - current Mothpad project license status.
 - `THIRD_PARTY.md` - current third-party and licensing notes.
 - `src/editor_core.py` - old Python spike, reference only.
 - `docs/mothpad-spec.md` - canonical product and architecture spec.
