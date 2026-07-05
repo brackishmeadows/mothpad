@@ -2,6 +2,13 @@
 
 No open-source license has been selected for Mothpad yet.
 
+Byline/provenance: Mothpad is by Morgan / brackishmeadows, built with
+substantial assistance from OpenAI Codex.
+
+This repository contains AI-generated / AI-assisted software. The code,
+documentation, tests, and project assets were produced through an interactive
+human + AI development process.
+
 Unless and until this repository adds an explicit license, the Mothpad source,
 documentation, glyph data, and project assets are copyright their respective
 contributors. All rights are reserved.

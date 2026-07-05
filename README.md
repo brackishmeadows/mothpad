@@ -4,6 +4,13 @@ A Notepad-shaped text editor for PicoCalc and Picoware: simple,
 plain-text-first, safe-saving, and friendly to other programs. Not an editor
 lifestyle cult. A borrowed bench.
 
+By Morgan / brackishmeadows, built with substantial assistance from OpenAI
+Codex.
+
+This project is AI-generated / AI-assisted software. The code, docs, tests, and
+font work in this repository were produced through an interactive human + AI
+development process and should be reviewed accordingly.
+
 ## Current Shape
 
 Status: active spike
