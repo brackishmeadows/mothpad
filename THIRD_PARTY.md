@@ -75,7 +75,8 @@ These values are hardware interface facts used by the clean shim. They are not
 copied program logic:
 
 - LCD SPI1: SCK 10, MOSI 11, MISO 12, CS 13, DC 14, RST 15.
-- Keyboard I2C1: SDA 6, SCL 7, address `0x1f`, key register `0x09`.
+- Keyboard I2C1: SDA 6, SCL 7, address `0x1f`, key register `0x09`,
+  battery register `0x0b`.
 - SD SPI0: SCK 18, MOSI 19, MISO 16, CS 17, detect 22.
 
 ## Public Release Checklist

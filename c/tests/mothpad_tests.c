@@ -13,6 +13,13 @@ static int failures;
     } \
 } while(0)
 
+static void test_temp_path(char *out, size_t out_size, const char *name)
+{
+    const char *tmp = getenv("TMP");
+    if(!tmp || !tmp[0]) tmp = ".";
+    snprintf(out, out_size, "%s/%s", tmp, name);
+}
+
 static void test_insert_and_lines(void)
 {
     Mothpad m;
@@ -134,8 +141,13 @@ static void test_safe_save_load(void)
 {
     Mothpad m;
     Mothpad loaded;
-    const char *path = "picocalc/mothpad/c/build/mothpad_test_save.txt";
-    const char *bak_path = "picocalc/mothpad/c/build/mothpad_test_save.txt.bak";
+    char path[512];
+    char bak_path[512];
+    char tmp_path[512];
+
+    test_temp_path(path, sizeof(path), "mothpad_test_save.txt");
+    test_temp_path(bak_path, sizeof(bak_path), "mothpad_test_save.txt.bak");
+    test_temp_path(tmp_path, sizeof(tmp_path), "mothpad_test_save.txt.tmp");
 
     moth_init(&m);
     CHECK(moth_set_text(&m, "saved words\n") == MOTH_OK);
@@ -160,7 +172,7 @@ static void test_safe_save_load(void)
 
     remove(path);
     remove(bak_path);
-    remove("picocalc/mothpad/c/build/mothpad_test_save.txt.tmp");
+    remove(tmp_path);
 }
 
 int main(void)

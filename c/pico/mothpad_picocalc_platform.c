@@ -21,6 +21,7 @@
 #define KBD_SCL_PIN   7
 #define KBD_ADDR      0x1f
 #define KBD_REG_KEY   0x09
+#define KBD_REG_BAT   0x0b
 #define KBD_CTRL_1    0x7e
 #define KBD_CTRL_2    0xa5
 
@@ -646,4 +647,23 @@ int picocalc_kbd_read(void)
     }
 
     return key;
+}
+
+int picocalc_kbd_read_battery(int *percent, int *charging)
+{
+    uint8_t reg = KBD_REG_BAT;
+    uint16_t data = 0;
+    int raw;
+
+    if(i2c_write_blocking(KBD_I2C, KBD_ADDR, &reg, 1, true) != 1) return -1;
+    sleep_ms(16);
+    if(i2c_read_blocking(KBD_I2C, KBD_ADDR, (uint8_t *)&data, 2, false) != 2) return -1;
+    if(data == 0) return -1;
+
+    raw = (data >> 8) & 0xff;
+    if(charging) *charging = (raw & 0x80) != 0;
+    raw &= 0x7f;
+    if(raw > 100) raw = 100;
+    if(percent) *percent = raw;
+    return 0;
 }

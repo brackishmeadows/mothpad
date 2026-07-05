@@ -43,3 +43,16 @@ int picocalc_kbd_read(void)
 {
     return read_i2c_kbd();
 }
+
+int picocalc_kbd_read_battery(int *percent, int *charging)
+{
+    int raw = read_battery();
+    if(raw < 0) return -1;
+
+    raw = (raw >> 8) & 0xff;
+    if(charging) *charging = (raw & 0x80) != 0;
+    raw &= 0x7f;
+    if(raw > 100) raw = 100;
+    if(percent) *percent = raw;
+    return 0;
+}

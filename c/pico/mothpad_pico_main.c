@@ -21,6 +21,7 @@ extern struct dirent *readdir(DIR *dir);
 #define PICOCALC_KEY_BACKSPACE 0x08
 #define PICOCALC_KEY_TAB       0x09
 #define PICOCALC_KEY_ENTER     0x0A
+#define PICOCALC_KEY_F1        0x81
 #define PICOCALC_KEY_ESC       0xB1
 #define PICOCALC_KEY_LEFT      0xB4
 #define PICOCALC_KEY_UP        0xB5
@@ -41,9 +42,11 @@ extern struct dirent *readdir(DIR *dir);
 
 #define MOTH_MAX_DIR_ENTRIES   96
 #define MOTH_MESSAGE_MS        1800
+#define MOTH_BATTERY_MS        60000
 
 typedef enum {
     PICO_MODE_EDITING = 0,
+    PICO_MODE_FILE_MENU,
     PICO_MODE_FILE_LIST,
     PICO_MODE_SAVE_AS,
     PICO_MODE_ERROR_MESSAGE,
@@ -65,6 +68,9 @@ static PicoCell g_lcd_cells[MOTH_COLS * MOTH_ROWS];
 static int g_lcd_cells_valid;
 static int g_cursor_visible = 1;
 static absolute_time_t g_next_cursor_blink;
+static absolute_time_t g_next_battery_update;
+static int g_battery_percent = -1;
+static int g_battery_charging;
 
 static PicoMode g_mode = PICO_MODE_EDITING;
 static PicoMode g_return_mode = PICO_MODE_EDITING;
@@ -80,6 +86,15 @@ static int g_entry_scroll;
 
 static char g_save_name[256];
 static int g_save_name_len;
+
+static const char *g_file_menu_items[] = {
+    "New",
+    "Open...",
+    "Save",
+    "Save As...",
+    "Close",
+};
+static int g_file_menu_selected;
 
 static int mothpad_pico_color(uint8_t color)
 {
@@ -190,9 +205,41 @@ static void pico_draw_bottom_message(void)
     pico_draw_text(0, MOTH_BOTTOM_ROW, g_message, 0, 7, MOTH_CELL_STATUS);
 }
 
+static void pico_update_battery(void)
+{
+    int percent = -1;
+    int charging = 0;
+
+    if(picocalc_kbd_read_battery(&percent, &charging) == 0)
+    {
+        g_battery_percent = percent;
+        g_battery_charging = charging;
+    }
+    g_next_battery_update = make_timeout_time_ms(MOTH_BATTERY_MS);
+}
+
+static void pico_draw_battery(void)
+{
+    char text[12];
+    int x;
+
+    if(g_battery_percent < 0)
+    {
+        snprintf(text, sizeof(text), "BAT --");
+    }
+    else
+    {
+        snprintf(text, sizeof(text), "%s%3d%%", g_battery_charging ? "CHG" : "BAT", g_battery_percent);
+    }
+
+    x = MOTH_COLS - (int)strlen(text);
+    pico_draw_text(x, MOTH_TOP_ROW, text, 0, 7, MOTH_CELL_STATUS);
+}
+
 static void pico_render_editing(void)
 {
     moth_render(&g_mothpad);
+    pico_draw_battery();
     pico_draw_bottom_message();
 }
 
@@ -213,6 +260,7 @@ static void pico_render_file_list(void)
 
     snprintf(top, sizeof(top), "Open: %s", g_cwd);
     pico_draw_text(0, MOTH_TOP_ROW, top, 0, 7, MOTH_CELL_STATUS);
+    pico_draw_battery();
 
     for(int row = 0; row < MOTH_TEXT_ROWS; ++row)
     {
@@ -239,9 +287,39 @@ static void pico_render_file_list(void)
     pico_draw_text(0, MOTH_BOTTOM_ROW, "Enter open  Esc cancel", 0, 7, MOTH_CELL_STATUS);
 }
 
+static void pico_render_file_menu(void)
+{
+    const int x = 0;
+    const int y = 1;
+    const int width = 14;
+    const int count = (int)(sizeof(g_file_menu_items) / sizeof(g_file_menu_items[0]));
+
+    pico_render_editing();
+    pico_draw_text(0, MOTH_TOP_ROW, " File ", 7, 0, MOTH_CELL_STATUS);
+
+    pico_draw_text(x, y, "+------------+", 0, 7, MOTH_CELL_STATUS);
+    for(int i = 0; i < count; ++i)
+    {
+        int row = y + 1 + i;
+        uint8_t fg = (i == g_file_menu_selected) ? 7 : 0;
+        uint8_t bg = (i == g_file_menu_selected) ? 0 : 7;
+        uint8_t flags = (i == g_file_menu_selected) ? MOTH_CELL_SELECTION : MOTH_CELL_STATUS;
+
+        for(int col = 0; col < width; ++col) pico_put_cell(x + col, row, ' ', fg, bg, flags);
+        pico_put_cell(x, row, '|', fg, bg, flags);
+        pico_put_cell(x + width - 1, row, '|', fg, bg, flags);
+        pico_draw_text(x + 2, row, g_file_menu_items[i], fg, bg, flags);
+    }
+    pico_draw_text(x, y + count + 1, "+------------+", 0, 7, MOTH_CELL_STATUS);
+}
+
 static void pico_render(void)
 {
-    if(g_mode == PICO_MODE_FILE_LIST)
+    if(g_mode == PICO_MODE_FILE_MENU)
+    {
+        pico_render_file_menu();
+    }
+    else if(g_mode == PICO_MODE_FILE_LIST)
     {
         pico_render_file_list();
     }
@@ -412,6 +490,19 @@ static void pico_begin_save_as(void)
     g_mode = PICO_MODE_SAVE_AS;
 }
 
+static void pico_new_file(void)
+{
+    if(g_mothpad.dirty)
+    {
+        pico_set_message("Save first");
+        return;
+    }
+
+    moth_init(&g_mothpad);
+    moth_set_text(&g_mothpad, "");
+    pico_set_message("New file");
+}
+
 static void pico_save_current(void)
 {
     if(!g_sd_ready)
@@ -430,12 +521,47 @@ static void pico_save_current(void)
     }
 }
 
+static void pico_begin_file_menu(void)
+{
+    g_file_menu_selected = 0;
+    g_mode = PICO_MODE_FILE_MENU;
+}
+
+static void pico_activate_file_menu_item(void)
+{
+    switch(g_file_menu_selected)
+    {
+        case 0:
+            g_mode = PICO_MODE_EDITING;
+            pico_new_file();
+            break;
+        case 1:
+            g_mode = PICO_MODE_EDITING;
+            pico_begin_open();
+            break;
+        case 2:
+            g_mode = PICO_MODE_EDITING;
+            pico_save_current();
+            break;
+        case 3:
+            g_mode = PICO_MODE_EDITING;
+            pico_begin_save_as();
+            break;
+        default:
+            g_mode = PICO_MODE_EDITING;
+            break;
+    }
+}
+
 static int pico_handle_editing_key(int key)
 {
     if(key < 0) return 0;
 
     switch(key)
     {
+        case PICOCALC_KEY_F1:
+            pico_begin_file_menu();
+            return 1;
         case PICOCALC_CTRL_O:
             pico_begin_open();
             return 1;
@@ -483,6 +609,47 @@ static int pico_handle_editing_key(int key)
     }
 
     return 0;
+}
+
+static int pico_handle_file_menu_key(int key)
+{
+    int count = (int)(sizeof(g_file_menu_items) / sizeof(g_file_menu_items[0]));
+
+    if(key < 0) return 0;
+    switch(key)
+    {
+        case PICOCALC_KEY_F1:
+        case PICOCALC_KEY_ESC:
+            g_mode = PICO_MODE_EDITING;
+            return 1;
+        case PICOCALC_KEY_UP:
+            if(g_file_menu_selected > 0) --g_file_menu_selected;
+            return 1;
+        case PICOCALC_KEY_DOWN:
+            if(g_file_menu_selected + 1 < count) ++g_file_menu_selected;
+            return 1;
+        case PICOCALC_KEY_ENTER:
+        case '\r':
+            pico_activate_file_menu_item();
+            return 1;
+        case 'n':
+        case 'N':
+            g_file_menu_selected = 0;
+            pico_activate_file_menu_item();
+            return 1;
+        case 'o':
+        case 'O':
+            g_file_menu_selected = 1;
+            pico_activate_file_menu_item();
+            return 1;
+        case 's':
+        case 'S':
+            g_file_menu_selected = 2;
+            pico_activate_file_menu_item();
+            return 1;
+        default:
+            return 0;
+    }
 }
 
 static int pico_handle_file_list_key(int key)
@@ -567,6 +734,7 @@ static int pico_handle_save_as_key(int key)
 
 static int pico_handle_key(int key)
 {
+    if(g_mode == PICO_MODE_FILE_MENU) return pico_handle_file_menu_key(key);
     if(g_mode == PICO_MODE_FILE_LIST) return pico_handle_file_list_key(key);
     if(g_mode == PICO_MODE_SAVE_AS) return pico_handle_save_as_key(key);
     return pico_handle_editing_key(key);
@@ -587,6 +755,7 @@ int main(void)
     memset(g_lcd_cells, 0, sizeof(g_lcd_cells));
     g_lcd_cells_valid = 0;
     g_next_cursor_blink = make_timeout_time_ms(450);
+    pico_update_battery();
 
     g_sd_ready = pico_init_sd();
     pico_render();
@@ -610,6 +779,11 @@ int main(void)
         else if(g_mode == PICO_MODE_EDITING && g_message[0] && !pico_message_active())
         {
             g_message[0] = 0;
+            pico_render();
+        }
+        else if(absolute_time_diff_us(get_absolute_time(), g_next_battery_update) <= 0)
+        {
+            pico_update_battery();
             pico_render();
         }
         sleep_ms(8);

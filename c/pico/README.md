@@ -76,6 +76,8 @@ polls the PicoCalc I2C keyboard through the same platform shim. The PicoCalc LCD
 path currently uses a `40x26` grid from 8x12 cells, and keypress redraws are
 diffed at the cell level instead of clearing the whole screen. It mounts the SD
 card at `/` through `pico-vfs` and does not format the card on mount failure.
+The top status row also shows the keyboard controller's battery percent when
+available.
 
 Build outputs:
 
@@ -100,6 +102,7 @@ Then launch it from the loader menu. Expected behavior:
 blank editable document
 Ctrl+S save / save-as
 Ctrl+O open file list for the current directory
+F1 open the File menu
 ```
 
 Expected working keys:
@@ -111,13 +114,15 @@ Expected working keys:
 - Delete
 - arrow keys
 - Home and End
+- F1 File menu
 - Ctrl+S save
 - Ctrl+O open
 
 ## Hardware Notes
 
 - LCD SPI1 pins: SCK 10, MOSI 11, MISO 12, CS 13, DC 14, RST 15.
-- Keyboard I2C1 pins: SDA 6, SCL 7, address `0x1f`, key register `0x09`.
+- Keyboard I2C1 pins: SDA 6, SCL 7, address `0x1f`, key register `0x09`,
+  battery register `0x0b`.
 - SD SPI0 pins: SCK 18, MOSI 19, MISO 16, CS 17, detect 22.
 - The clean LCD driver uses 18-bit RGB888 writes. If colors look inverted,
   cyan-fringed, or single-pixel-corrupted, check that `0x3A = 0x66` is sent

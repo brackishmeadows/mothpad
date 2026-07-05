@@ -28,5 +28,6 @@ void picocalc_lcd_put_char(char ch, int flush);
 void picocalc_kbd_init(void);
 int picocalc_kbd_read_raw(uint16_t *out);
 int picocalc_kbd_read(void);
+int picocalc_kbd_read_battery(int *percent, int *charging);
 
 #endif

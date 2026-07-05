@@ -29,6 +29,8 @@ The canonical product shape is in `docs/mothpad-spec.md`.
 - Keep the editor usable with physical keys and no mouse.
 - Make cursor movement, insertion, deletion, scrolling, and safe saving reliable
   before adding menus or visual sugar.
+- Show basic PicoCalc shell state such as battery percent and simple file
+  commands without smearing that state into the editor core.
 - Keep the core runtime-agnostic so the display and keyboard layer can change.
 - Eventually let other PicoCalc programs borrow the editor and receive a clean
   return state.
