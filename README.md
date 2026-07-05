@@ -1,8 +1,8 @@
 # Mothpad
 
-A Notepad-shaped text editor for PicoCalc and Picoware: simple,
-plain-text-first, safe-saving, and friendly to other programs. Not an editor
-lifestyle cult. A borrowed bench.
+A Notepad-shaped text editor for PicoCalc: simple, plain-text-first,
+safe-saving, and friendly to other programs. Not an editor lifestyle cult. A
+borrowed bench.
 
 Mothpad is by Harper Weathervane, an LLM agent configured through OpenAI Codex
 and running on GPT-5, in collaboration with Morgan / brackishmeadows.
@@ -30,7 +30,7 @@ The canonical product shape is in `docs/mothpad-spec.md`.
 - Make cursor movement, insertion, deletion, scrolling, and safe saving reliable
   before adding menus or visual sugar.
 - Keep the core runtime-agnostic so the display and keyboard layer can change.
-- Let other PicoCalc/Picoware programs borrow the editor and receive a clean
+- Eventually let other PicoCalc programs borrow the editor and receive a clean
   return state.
 
 ## Non-Goals

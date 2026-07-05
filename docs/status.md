@@ -4,7 +4,7 @@ Status: active spike
 
 ## What This Is
 
-A new PicoCalc/Picoware text editor project. The current artifact is a C-first
+A new PicoCalc text editor project. The current artifact is a C-first
 desktop-testable editing core plus a Pico SDK UF2 shell that boots on PicoCalc,
 draws through a clean LCD/keyboard shim, and opens/saves files on the SD card.
 
@@ -33,8 +33,8 @@ TEXT BUFFER
 
 ## Candidate Runtime Shells
 
-- Picoware/MicroPython app: likely best if the existing SD-card setup is the
-  user's active environment.
+- Picoware/MicroPython app: possible future port target, not supported by the
+  current build.
 - PicoMite BASIC editor: possible, but less pleasant for reusable core logic.
 - C/C++ firmware app: strongest control, highest setup cost.
 

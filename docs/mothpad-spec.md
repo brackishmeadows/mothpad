@@ -2,9 +2,13 @@
 
 ## Core Thesis
 
-Mothpad should be a Notepad-shaped editor for PicoCalc and Picoware: simple,
-obvious, plain-text-first, and friendly to other programs. Not vi. Not emacs.
-Not an editor lifestyle cult. A clean little shared knife in the drawer.
+Mothpad should be a Notepad-shaped editor for PicoCalc first: simple, obvious,
+plain-text-first, and friendly to other programs. Not vi. Not emacs. Not an
+editor lifestyle cult. A clean little shared knife in the drawer.
+
+Implementation note as of 2026-07-05: the current build is a Pico SDK UF2 for
+PicoCalc. It does not currently run inside Picoware. Picoware references below
+are future integration goals, not current support claims.
 
 ## Primary Goal
 
