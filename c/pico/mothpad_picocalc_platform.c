@@ -190,8 +190,20 @@ static void lcd_fill_rect(int x, int y, int w, int h, int color)
 
 static const uint8_t *glyph5x7(char ch)
 {
+    unsigned char code = (unsigned char)ch;
     static const uint8_t blank[GLYPH_HEIGHT] = {0, 0, 0, 0, 0, 0, 0};
     static const uint8_t unknown[GLYPH_HEIGHT] = {14, 17, 1, 2, 4, 0, 4};
+    static const uint8_t menu_tl[GLYPH_HEIGHT] = {0, 0, 15, 8, 8, 8, 8};
+    static const uint8_t menu_tr[GLYPH_HEIGHT] = {0, 0, 30, 2, 2, 2, 2};
+    static const uint8_t menu_bl[GLYPH_HEIGHT] = {8, 8, 8, 8, 15, 0, 0};
+    static const uint8_t menu_br[GLYPH_HEIGHT] = {2, 2, 2, 2, 30, 0, 0};
+    static const uint8_t menu_h[GLYPH_HEIGHT] = {0, 0, 31, 0, 0, 0, 0};
+    static const uint8_t menu_v[GLYPH_HEIGHT] = {2, 2, 2, 2, 2, 2, 2};
+    static const uint8_t bat0[GLYPH_HEIGHT] = {0, 14, 17, 17, 17, 14, 0};
+    static const uint8_t bat25[GLYPH_HEIGHT] = {0, 14, 25, 25, 25, 14, 0};
+    static const uint8_t bat50[GLYPH_HEIGHT] = {0, 14, 29, 29, 29, 14, 0};
+    static const uint8_t bat75[GLYPH_HEIGHT] = {0, 14, 31, 31, 31, 14, 0};
+    static const uint8_t bat100[GLYPH_HEIGHT] = {0, 31, 31, 31, 31, 31, 0};
     static const uint8_t bang[GLYPH_HEIGHT] = {4, 4, 4, 4, 4, 0, 4};
     static const uint8_t quote[GLYPH_HEIGHT] = {10, 10, 10, 0, 0, 0, 0};
     static const uint8_t hash[GLYPH_HEIGHT] = {18, 18, 63, 18, 63, 18, 18};
@@ -286,8 +298,19 @@ static const uint8_t *glyph5x7(char ch)
     static const uint8_t y[GLYPH_HEIGHT] = {0, 0, 17, 17, 15, 1, 14};
     static const uint8_t z[GLYPH_HEIGHT] = {0, 0, 31, 2, 4, 8, 31};
 
-    switch(ch)
+    switch(code)
     {
+        case 0x80: return menu_tl;
+        case 0x81: return menu_tr;
+        case 0x82: return menu_bl;
+        case 0x83: return menu_br;
+        case 0x84: return menu_h;
+        case 0x85: return menu_v;
+        case 0x86: return bat0;
+        case 0x87: return bat25;
+        case 0x88: return bat50;
+        case 0x89: return bat75;
+        case 0x8a: return bat100;
         case ' ': return blank;
         case '!': return bang;
         case '"': return quote;
@@ -360,7 +383,7 @@ static const uint8_t *glyph5x7(char ch)
         default: break;
     }
 
-    switch((char)toupper((unsigned char)ch))
+    switch((char)toupper(code))
     {
         case 'A': return A;
         case 'B': return B;

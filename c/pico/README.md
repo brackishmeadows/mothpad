@@ -118,6 +118,15 @@ Expected working keys:
 - Ctrl+S save
 - Ctrl+O open
 
+The File menu currently offers New, Open, Save, Save As, and Reboot. Reboot is
+refused while the buffer is dirty and shows `Save first`; on a clean buffer it
+uses the Pico SDK watchdog reboot path.
+
+The top-right status uses private LCD glyph codes for a 25%-step battery icon.
+Those glyphs are defined in `mothpad_picocalc_platform.h` and rendered only by
+the PicoCalc platform shim; they are not file text and are not part of the core
+editor model.
+
 ## Hardware Notes
 
 - LCD SPI1 pins: SCK 10, MOSI 11, MISO 12, CS 13, DC 14, RST 15.

@@ -3,6 +3,7 @@
 #include "blockdevice/sd.h"
 #include "filesystem/fat.h"
 #include "filesystem/vfs.h"
+#include "hardware/watchdog.h"
 #include "mothpad_picocalc_platform.h"
 #include "pico/stdlib.h"
 
@@ -92,7 +93,7 @@ static const char *g_file_menu_items[] = {
     "Open...",
     "Save",
     "Save As...",
-    "Close",
+    "Reboot",
 };
 static int g_file_menu_selected;
 
@@ -198,6 +199,11 @@ static void pico_draw_text(int x, int y, const char *text, uint8_t fg, uint8_t b
     }
 }
 
+static void pico_draw_hline(int x, int y, int width, uint8_t fg, uint8_t bg, uint8_t flags)
+{
+    for(int i = 0; i < width; ++i) pico_put_cell(x + i, y, PICOCALC_GLYPH_MENU_H, fg, bg, flags);
+}
+
 static void pico_draw_bottom_message(void)
 {
     if(!pico_message_active()) return;
@@ -222,18 +228,24 @@ static void pico_draw_battery(void)
 {
     char text[12];
     int x;
+    char icon = PICOCALC_GLYPH_BAT_0;
 
     if(g_battery_percent < 0)
     {
-        snprintf(text, sizeof(text), "BAT --");
+        snprintf(text, sizeof(text), " --");
     }
     else
     {
-        snprintf(text, sizeof(text), "%s%3d%%", g_battery_charging ? "CHG" : "BAT", g_battery_percent);
+        if(g_battery_percent >= 88) icon = PICOCALC_GLYPH_BAT_100;
+        else if(g_battery_percent >= 63) icon = PICOCALC_GLYPH_BAT_75;
+        else if(g_battery_percent >= 38) icon = PICOCALC_GLYPH_BAT_50;
+        else if(g_battery_percent >= 13) icon = PICOCALC_GLYPH_BAT_25;
+        snprintf(text, sizeof(text), "%c%3d%%", g_battery_charging ? '+' : ' ', g_battery_percent);
     }
 
-    x = MOTH_COLS - (int)strlen(text);
-    pico_draw_text(x, MOTH_TOP_ROW, text, 0, 7, MOTH_CELL_STATUS);
+    x = MOTH_COLS - 1 - (int)strlen(text);
+    pico_put_cell(x, MOTH_TOP_ROW, icon, 0, 7, MOTH_CELL_STATUS);
+    pico_draw_text(x + 1, MOTH_TOP_ROW, text, 0, 7, MOTH_CELL_STATUS);
 }
 
 static void pico_render_editing(void)
@@ -297,7 +309,9 @@ static void pico_render_file_menu(void)
     pico_render_editing();
     pico_draw_text(0, MOTH_TOP_ROW, " File ", 7, 0, MOTH_CELL_STATUS);
 
-    pico_draw_text(x, y, "+------------+", 0, 7, MOTH_CELL_STATUS);
+    pico_put_cell(x, y, PICOCALC_GLYPH_MENU_TL, 0, 7, MOTH_CELL_STATUS);
+    pico_draw_hline(x + 1, y, width - 2, 0, 7, MOTH_CELL_STATUS);
+    pico_put_cell(x + width - 1, y, PICOCALC_GLYPH_MENU_TR, 0, 7, MOTH_CELL_STATUS);
     for(int i = 0; i < count; ++i)
     {
         int row = y + 1 + i;
@@ -306,11 +320,13 @@ static void pico_render_file_menu(void)
         uint8_t flags = (i == g_file_menu_selected) ? MOTH_CELL_SELECTION : MOTH_CELL_STATUS;
 
         for(int col = 0; col < width; ++col) pico_put_cell(x + col, row, ' ', fg, bg, flags);
-        pico_put_cell(x, row, '|', fg, bg, flags);
-        pico_put_cell(x + width - 1, row, '|', fg, bg, flags);
+        pico_put_cell(x, row, PICOCALC_GLYPH_MENU_V, fg, bg, flags);
+        pico_put_cell(x + width - 1, row, PICOCALC_GLYPH_MENU_V, fg, bg, flags);
         pico_draw_text(x + 2, row, g_file_menu_items[i], fg, bg, flags);
     }
-    pico_draw_text(x, y + count + 1, "+------------+", 0, 7, MOTH_CELL_STATUS);
+    pico_put_cell(x, y + count + 1, PICOCALC_GLYPH_MENU_BL, 0, 7, MOTH_CELL_STATUS);
+    pico_draw_hline(x + 1, y + count + 1, width - 2, 0, 7, MOTH_CELL_STATUS);
+    pico_put_cell(x + width - 1, y + count + 1, PICOCALC_GLYPH_MENU_BR, 0, 7, MOTH_CELL_STATUS);
 }
 
 static void pico_render(void)
@@ -521,6 +537,18 @@ static void pico_save_current(void)
     }
 }
 
+static void pico_reboot(void)
+{
+    if(g_mothpad.dirty)
+    {
+        pico_set_message("Save first");
+        return;
+    }
+
+    watchdog_reboot(0, 0, 0);
+    for(;;) tight_loop_contents();
+}
+
 static void pico_begin_file_menu(void)
 {
     g_file_menu_selected = 0;
@@ -546,6 +574,10 @@ static void pico_activate_file_menu_item(void)
         case 3:
             g_mode = PICO_MODE_EDITING;
             pico_begin_save_as();
+            break;
+        case 4:
+            g_mode = PICO_MODE_EDITING;
+            pico_reboot();
             break;
         default:
             g_mode = PICO_MODE_EDITING;

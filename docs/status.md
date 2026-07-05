@@ -73,9 +73,10 @@ End.
 Current file behavior: boots into a blank document, uses Ctrl+S for save/save-as,
 uses Ctrl+O for a simple current-directory file list, and keeps editing in memory
 if SD mount fails. F1 opens a small File menu for New, Open, Save, Save As, and
-Close. The top status row shows the battery percent when the keyboard controller
-reports it. The SD stack uses `pico-vfs` with FatFs over SPI0 pins 18/19/16/17
-plus detect pin 22.
+Reboot. Reboot is refused while the buffer is dirty and otherwise uses Pico SDK
+watchdog reboot. The top status row shows a private 25%-step battery glyph plus
+percent when the keyboard controller reports it. The SD stack uses `pico-vfs`
+with FatFs over SPI0 pins 18/19/16/17 plus detect pin 22.
 
 Hardware posture as of 2026-07-05: `mothpad_pico.uf2` is a clean-build PicoCalc
 hardware success through Pelrun's UF2 Loader. It edits live, uses SD-backed

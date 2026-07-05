@@ -39,6 +39,7 @@ target_link_libraries(mothpad_pico
     pico_stdlib
     hardware_spi
     hardware_i2c
+    hardware_watchdog
     blockdevice_sd
     filesystem_fat
     filesystem_vfs
@@ -68,6 +69,7 @@ target_link_libraries(mothpad_pico_legacy
     pico_stdlib
     hardware_spi
     hardware_i2c
+    hardware_watchdog
     blockdevice_sd
     filesystem_fat
     filesystem_vfs

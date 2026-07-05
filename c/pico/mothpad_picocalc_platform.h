@@ -16,6 +16,18 @@
 #define PICOCALC_COLOR_ORDER_BRG 4
 #define PICOCALC_COLOR_ORDER_BGR 5
 
+#define PICOCALC_GLYPH_MENU_TL   ((char)0x80)
+#define PICOCALC_GLYPH_MENU_TR   ((char)0x81)
+#define PICOCALC_GLYPH_MENU_BL   ((char)0x82)
+#define PICOCALC_GLYPH_MENU_BR   ((char)0x83)
+#define PICOCALC_GLYPH_MENU_H    ((char)0x84)
+#define PICOCALC_GLYPH_MENU_V    ((char)0x85)
+#define PICOCALC_GLYPH_BAT_0     ((char)0x86)
+#define PICOCALC_GLYPH_BAT_25    ((char)0x87)
+#define PICOCALC_GLYPH_BAT_50    ((char)0x88)
+#define PICOCALC_GLYPH_BAT_75    ((char)0x89)
+#define PICOCALC_GLYPH_BAT_100   ((char)0x8a)
+
 void picocalc_lcd_init(void);
 void picocalc_lcd_clear(void);
 void picocalc_lcd_set_color_order(int order);
