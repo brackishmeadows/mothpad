@@ -71,14 +71,17 @@ editing: printable characters, Enter, Tab, Backspace, Delete, arrows, Home, and
 End.
 
 Current file behavior: boots into a blank document, uses Ctrl+S for save/save-as,
-uses Ctrl+O for a simple current-directory file list, and keeps editing in memory
-if SD mount fails. F1 opens a small File menu for New, Open, Save, Save As, and
-Reboot. Reboot is refused while the buffer is dirty and otherwise uses Pico SDK
-watchdog reboot. The top status row shows a private two-cell, 25%-step battery
-glyph plus percent when the keyboard controller reports it. Private UI glyphs
-now render full-cell while text glyphs keep their padded 5x7 placement, so menu
-box pieces can connect. The SD stack uses `pico-vfs` with FatFs over SPI0 pins
-18/19/16/17 plus detect pin 22.
+uses Ctrl+O for a current-directory file list, uses Ctrl+Z for bounded
+single-character undo, and keeps editing in memory if SD mount fails. F1 opens a
+small File menu for New, Open, Save, Save As, and Reboot. Dirty New, Open, and
+Reboot actions open an Unsaved Changes popup with Cancel, Quit, and Save+Quit
+choices. The Open screen shows a right-side peek pane only when the selected
+file has text content to preview, with `..` first, directories before files, and
+case-insensitive ASCII name sorting. The top status row shows a private
+two-cell, 25%-step battery glyph plus percent when the keyboard controller
+reports it. Private UI glyphs now render full-cell while text glyphs keep their
+padded 5x7 placement, so menu box pieces can connect. The SD stack uses
+`pico-vfs` with FatFs over SPI0 pins 18/19/16/17 plus detect pin 22.
 
 Hardware posture as of 2026-07-05: `mothpad_pico.uf2` is a clean-build PicoCalc
 hardware success through Pelrun's UF2 Loader. It edits live, uses SD-backed
@@ -105,7 +108,7 @@ as fallback, not the public-release posture. See `../THIRD_PARTY.md`.
 1. Run the C host tests.
 2. Harden safe-save behavior for the target filesystem.
 3. Run the hardware acceptance pass: save-as, reopen, edit, verify `.bak`.
-4. Add dirty quit handling.
+4. Add basic find.
 5. Expand the File menu only after the current shallow version is proven on
    hardware.
 

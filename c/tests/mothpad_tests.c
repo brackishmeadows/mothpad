@@ -62,6 +62,44 @@ static void test_delete_joins_lines(void)
     CHECK(m.line_count == 1);
 }
 
+static void test_undo_insert_restores_clean_text(void)
+{
+    Mothpad m;
+    moth_init(&m);
+    CHECK(moth_set_text(&m, "ab") == MOTH_OK);
+    m.cursor = 1;
+
+    CHECK(moth_insert_char(&m, 'X') == MOTH_OK);
+    CHECK(strcmp(m.text, "aXb") == 0);
+    CHECK(m.dirty == 1);
+
+    CHECK(moth_undo(&m) == MOTH_OK);
+    CHECK(strcmp(m.text, "ab") == 0);
+    CHECK(m.cursor == 1);
+    CHECK(m.dirty == 0);
+}
+
+static void test_undo_backspace_and_delete(void)
+{
+    Mothpad m;
+    moth_init(&m);
+    CHECK(moth_set_text(&m, "abc") == MOTH_OK);
+
+    m.cursor = 2;
+    moth_backspace(&m);
+    CHECK(strcmp(m.text, "ac") == 0);
+    CHECK(moth_undo(&m) == MOTH_OK);
+    CHECK(strcmp(m.text, "abc") == 0);
+    CHECK(m.cursor == 2);
+
+    m.cursor = 1;
+    moth_delete(&m);
+    CHECK(strcmp(m.text, "ac") == 0);
+    CHECK(moth_undo(&m) == MOTH_OK);
+    CHECK(strcmp(m.text, "abc") == 0);
+    CHECK(m.cursor == 1);
+}
+
 static void test_tab_is_one_character(void)
 {
     Mothpad m;
@@ -162,13 +200,19 @@ static void test_safe_save_load(void)
     CHECK(moth_set_text(&m, "new words\n") == MOTH_OK);
     m.dirty = 1;
     CHECK(moth_save_file(&m, path) == MOTH_OK);
+    m.cursor = m.text_len;
+    CHECK(moth_insert_char(&m, '!') == MOTH_OK);
+    CHECK(moth_save_file(&m, path) == MOTH_OK);
+    CHECK(moth_undo(&m) == MOTH_OK);
+    CHECK(strcmp(m.text, "new words\n!") == 0);
+
     FILE *bak = fopen(bak_path, "rb");
     CHECK(bak != NULL);
     if(bak) fclose(bak);
 
     moth_init(&loaded);
     CHECK(moth_load_file(&loaded, path) == MOTH_OK);
-    CHECK(strcmp(loaded.text, "new words\n") == 0);
+    CHECK(strcmp(loaded.text, "new words\n!") == 0);
 
     remove(path);
     remove(bak_path);
@@ -180,6 +224,8 @@ int main(void)
     test_insert_and_lines();
     test_backspace_joins_lines();
     test_delete_joins_lines();
+    test_undo_insert_restores_clean_text();
+    test_undo_backspace_and_delete();
     test_tab_is_one_character();
     test_join_path();
     test_vertical_movement_clamps_column();

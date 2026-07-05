@@ -58,6 +58,52 @@ static int moth_rebuild_lines(Mothpad *m)
     return 1;
 }
 
+static void moth_clear_undo(Mothpad *m)
+{
+    if(m) m->undo_count = 0;
+}
+
+static void moth_push_undo(Mothpad *m, MothUndoRecord record)
+{
+    if(!m) return;
+    if(m->undo_count >= MOTH_MAX_UNDO)
+    {
+        memmove(m->undo,
+                m->undo + 1,
+                sizeof(m->undo[0]) * (MOTH_MAX_UNDO - 1));
+        m->undo_count = MOTH_MAX_UNDO - 1;
+    }
+    m->undo[m->undo_count++] = record;
+}
+
+static MothStatus moth_raw_insert_char(Mothpad *m, int pos, char ch)
+{
+    if(!m) return MOTH_ERR_BAD_ARGUMENT;
+    if(m->text_len >= MOTH_MAX_FILE_SIZE) return MOTH_ERR_FULL;
+    pos = moth_clamp_int(pos, 0, m->text_len);
+
+    memmove(m->text + pos + 1,
+            m->text + pos,
+            (size_t)(m->text_len - pos + 1));
+    m->text[pos] = ch;
+    ++m->text_len;
+    if(!moth_rebuild_lines(m)) return MOTH_ERR_LINE_LIMIT;
+    return MOTH_OK;
+}
+
+static MothStatus moth_raw_delete_char(Mothpad *m, int pos)
+{
+    if(!m) return MOTH_ERR_BAD_ARGUMENT;
+    if(pos < 0 || pos >= m->text_len) return MOTH_ERR_BAD_ARGUMENT;
+
+    memmove(m->text + pos,
+            m->text + pos + 1,
+            (size_t)(m->text_len - pos));
+    --m->text_len;
+    if(!moth_rebuild_lines(m)) return MOTH_ERR_LINE_LIMIT;
+    return MOTH_OK;
+}
+
 static int moth_line_from_pos(const Mothpad *m, int pos)
 {
     if(!m || m->line_count <= 0) return 0;
@@ -181,6 +227,7 @@ MothStatus moth_set_text(Mothpad *m, const char *text)
     m->scroll_line = 0;
     m->scroll_col = 0;
     m->dirty = 0;
+    moth_clear_undo(m);
 
     if(!moth_rebuild_lines(m)) return MOTH_ERR_LINE_LIMIT;
     return MOTH_OK;
@@ -208,6 +255,7 @@ MothStatus moth_load_file(Mothpad *m, const char *path)
     m->scroll_line = 0;
     m->scroll_col = 0;
     m->dirty = 0;
+    moth_clear_undo(m);
     moth_copy_path(m->path, sizeof(m->path), path);
 
     if(!moth_rebuild_lines(m)) return MOTH_ERR_LINE_LIMIT;
@@ -249,25 +297,31 @@ MothStatus moth_save_file(Mothpad *m, const char *path)
 
     moth_copy_path(m->path, sizeof(m->path), path);
     m->dirty = 0;
+    moth_clear_undo(m);
     return MOTH_OK;
 }
 #endif
 
 MothStatus moth_insert_char(Mothpad *m, char ch)
 {
-    if(!m) return MOTH_ERR_BAD_ARGUMENT;
-    if(m->text_len >= MOTH_MAX_FILE_SIZE) return MOTH_ERR_FULL;
+    MothUndoRecord undo;
+    int pos;
 
-    memmove(m->text + m->cursor + 1,
-            m->text + m->cursor,
-            (size_t)(m->text_len - m->cursor + 1));
-    m->text[m->cursor] = ch;
+    if(!m) return MOTH_ERR_BAD_ARGUMENT;
+    pos = m->cursor;
+    undo.kind = MOTH_UNDO_DELETE_CHAR;
+    undo.pos = pos;
+    undo.ch = ch;
+    undo.cursor_before = m->cursor;
+    undo.dirty_before = m->dirty;
+
+    MothStatus status = moth_raw_insert_char(m, pos, ch);
+    if(status != MOTH_OK) return status;
+
     ++m->cursor;
-    ++m->text_len;
     m->preferred_col = moth_cursor_col(m);
     m->dirty = 1;
-
-    if(!moth_rebuild_lines(m)) return MOTH_ERR_LINE_LIMIT;
+    moth_push_undo(m, undo);
     return MOTH_OK;
 }
 
@@ -305,28 +359,78 @@ MothStatus moth_join_path(char *dest, size_t dest_size, const char *dir, const c
     return MOTH_OK;
 }
 
+MothStatus moth_undo(Mothpad *m)
+{
+    MothUndoRecord undo;
+    MothStatus status;
+
+    if(!m) return MOTH_ERR_BAD_ARGUMENT;
+    if(m->undo_count <= 0) return MOTH_OK;
+
+    undo = m->undo[--m->undo_count];
+    if(undo.kind == MOTH_UNDO_INSERT_CHAR)
+    {
+        status = moth_raw_insert_char(m, undo.pos, undo.ch);
+        if(status != MOTH_OK)
+        {
+            moth_push_undo(m, undo);
+            return status;
+        }
+    }
+    else if(undo.kind == MOTH_UNDO_DELETE_CHAR)
+    {
+        status = moth_raw_delete_char(m, undo.pos);
+        if(status != MOTH_OK)
+        {
+            moth_push_undo(m, undo);
+            return status;
+        }
+    }
+    else
+    {
+        return MOTH_OK;
+    }
+
+    m->cursor = moth_clamp_int(undo.cursor_before, 0, m->text_len);
+    m->preferred_col = moth_cursor_col(m);
+    m->dirty = undo.dirty_before;
+    return MOTH_OK;
+}
+
 void moth_backspace(Mothpad *m)
 {
+    MothUndoRecord undo;
     if(!m || m->cursor <= 0) return;
-    memmove(m->text + m->cursor - 1,
-            m->text + m->cursor,
-            (size_t)(m->text_len - m->cursor + 1));
+
+    undo.kind = MOTH_UNDO_INSERT_CHAR;
+    undo.pos = m->cursor - 1;
+    undo.ch = m->text[m->cursor - 1];
+    undo.cursor_before = m->cursor;
+    undo.dirty_before = m->dirty;
+
+    if(moth_raw_delete_char(m, m->cursor - 1) != MOTH_OK) return;
+
     --m->cursor;
-    --m->text_len;
     m->preferred_col = moth_cursor_col(m);
     m->dirty = 1;
-    moth_rebuild_lines(m);
+    moth_push_undo(m, undo);
 }
 
 void moth_delete(Mothpad *m)
 {
+    MothUndoRecord undo;
     if(!m || m->cursor >= m->text_len) return;
-    memmove(m->text + m->cursor,
-            m->text + m->cursor + 1,
-            (size_t)(m->text_len - m->cursor));
-    --m->text_len;
+
+    undo.kind = MOTH_UNDO_INSERT_CHAR;
+    undo.pos = m->cursor;
+    undo.ch = m->text[m->cursor];
+    undo.cursor_before = m->cursor;
+    undo.dirty_before = m->dirty;
+
+    if(moth_raw_delete_char(m, m->cursor) != MOTH_OK) return;
+
     m->dirty = 1;
-    moth_rebuild_lines(m);
+    moth_push_undo(m, undo);
 }
 
 void moth_cursor_left(Mothpad *m)

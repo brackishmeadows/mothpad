@@ -94,6 +94,7 @@ Required:
 - Basic find.
 - Confirm quit if unsaved.
 - Return cleanly to caller.
+- Bounded undo for ordinary text edits.
 
 Soon after:
 
@@ -109,7 +110,7 @@ Later, maybe:
 - Roll from simple dice tables.
 - Syntax highlighting.
 - Multiple buffers.
-- Undo.
+- Rich undo/redo grouping.
 
 ## Safe Save Behavior
 

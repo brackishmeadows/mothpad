@@ -174,12 +174,14 @@ Expected behavior on this build:
 - Enter, Tab, Backspace, Delete, Home, and End should work.
 - Ctrl+S should save the current file, or open a save-as prompt if unnamed.
 - Ctrl+O should open a file list for the current directory.
+- Ctrl+Z should undo the last edit while undo history is available.
 - Save uses `.tmp` and `.bak` rename behavior from the core safe-save path.
 - If SD mount fails, the editor remains usable in memory and shows a short error.
 
 ```text
-Ctrl+S -> Save as: mothpad.txt
-Ctrl+O -> file list
+Ctrl+S -> centered Save As popup for unnamed files
+Ctrl+O -> file list, with a text peek pane when useful
+Ctrl+Z -> undo
 ```
 
 If `mothpad_pico.uf2` is blank, retest `mothpad_diag.uf2` and
@@ -244,7 +246,7 @@ The next useful engineering step is the SD acceptance pass, then the rest of
 the editor shell:
 
 - verify save-as, reopen, edit, save-again, and `.bak` behavior on SD.
-- dirty quit prompt and save result contract.
+- save result / return-to-caller contract.
 - new/quit command UI.
 - better file list sorting/filtering.
 - a public-release notice bundle for Pico SDK, `pico-vfs`, and FatFs.

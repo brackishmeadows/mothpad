@@ -6,6 +6,7 @@
 
 #define MOTH_MAX_FILE_SIZE 65536
 #define MOTH_MAX_LINES 4096
+#define MOTH_MAX_UNDO 128
 
 #define MOTH_COLS 40
 #define MOTH_ROWS 26
@@ -58,6 +59,20 @@ typedef struct {
     uint8_t flags;
 } MothCell;
 
+typedef enum {
+    MOTH_UNDO_NONE = 0,
+    MOTH_UNDO_INSERT_CHAR,
+    MOTH_UNDO_DELETE_CHAR,
+} MothUndoKind;
+
+typedef struct {
+    MothUndoKind kind;
+    int pos;
+    char ch;
+    int cursor_before;
+    int dirty_before;
+} MothUndoRecord;
+
 typedef struct {
     char text[MOTH_MAX_FILE_SIZE + 1];
     int text_len;
@@ -71,6 +86,8 @@ typedef struct {
     char path[256];
     MothLine lines[MOTH_MAX_LINES];
     int line_count;
+    MothUndoRecord undo[MOTH_MAX_UNDO];
+    int undo_count;
     MothCell cells[MOTH_COLS * MOTH_ROWS];
 } Mothpad;
 
@@ -85,6 +102,7 @@ MothStatus moth_save_file(Mothpad *m, const char *path);
 MothStatus moth_insert_char(Mothpad *m, char ch);
 MothStatus moth_insert_text(Mothpad *m, const char *text);
 MothStatus moth_join_path(char *dest, size_t dest_size, const char *dir, const char *name);
+MothStatus moth_undo(Mothpad *m);
 void moth_backspace(Mothpad *m);
 void moth_delete(Mothpad *m);
 

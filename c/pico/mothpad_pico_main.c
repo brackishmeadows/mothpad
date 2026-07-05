@@ -8,6 +8,7 @@
 #include "pico/stdlib.h"
 
 #include <errno.h>
+#include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
 #include <sys/dirent.h>
@@ -34,6 +35,7 @@ extern struct dirent *readdir(DIR *dir);
 
 #define PICOCALC_CTRL_O        15
 #define PICOCALC_CTRL_S        19
+#define PICOCALC_CTRL_Z        26
 
 #define SD_SCLK_PIN            18
 #define SD_MOSI_PIN            19
@@ -120,6 +122,36 @@ static int g_file_menu_selected;
 static void pico_perform_dirty_action(PicoDirtyAction action);
 static void pico_draw_popup_box(int x, int y, int width, int height);
 static void pico_update_file_preview(void);
+
+static int pico_ascii_lower(int ch)
+{
+    if(ch >= 'A' && ch <= 'Z') return ch + ('a' - 'A');
+    return ch;
+}
+
+static int pico_name_compare_casefold(const char *a, const char *b)
+{
+    int i = 0;
+    for(;;)
+    {
+        int ca = pico_ascii_lower((unsigned char)a[i]);
+        int cb = pico_ascii_lower((unsigned char)b[i]);
+        if(ca != cb) return ca - cb;
+        if(ca == 0) return strcmp(a, b);
+        ++i;
+    }
+}
+
+static int pico_compare_dir_entries(const void *a, const void *b)
+{
+    const PicoDirEntry *ea = (const PicoDirEntry *)a;
+    const PicoDirEntry *eb = (const PicoDirEntry *)b;
+
+    if(strcmp(ea->name, "..") == 0) return -1;
+    if(strcmp(eb->name, "..") == 0) return 1;
+    if(ea->is_dir != eb->is_dir) return eb->is_dir - ea->is_dir;
+    return pico_name_compare_casefold(ea->name, eb->name);
+}
 
 static int mothpad_pico_color(uint8_t color)
 {
@@ -701,6 +733,10 @@ static int pico_refresh_file_list(void)
     }
 
     closedir(dir);
+    if(g_entry_count > 1)
+    {
+        qsort(g_entries, (size_t)g_entry_count, sizeof(g_entries[0]), pico_compare_dir_entries);
+    }
     g_preview_selected = -1;
     return 1;
 }
@@ -900,6 +936,8 @@ static int pico_handle_editing_key(int key)
         case PICOCALC_CTRL_S:
             pico_save_current();
             return 1;
+        case PICOCALC_CTRL_Z:
+            return moth_undo(&g_mothpad) == MOTH_OK;
         case PICOCALC_KEY_LEFT:
             moth_cursor_left(&g_mothpad);
             return 1;

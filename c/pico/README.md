@@ -103,6 +103,7 @@ blank editable document
 Ctrl+S save / save-as
 Ctrl+O open file list for the current directory
 F1 open the File menu
+Ctrl+Z undo the last edit
 ```
 
 Expected working keys:
@@ -117,10 +118,14 @@ Expected working keys:
 - F1 File menu
 - Ctrl+S save
 - Ctrl+O open
+- Ctrl+Z undo
 
-The File menu currently offers New, Open, Save, Save As, and Reboot. Reboot is
-refused while the buffer is dirty and shows `Save first`; on a clean buffer it
-uses the Pico SDK watchdog reboot path.
+The File menu currently offers New, Open, Save, Save As, and Reboot. Dirty New,
+Open, and Reboot actions open an `Unsaved changes` popup with Cancel, Quit, and
+Save+Quit choices. On a clean buffer Reboot uses the Pico SDK watchdog reboot
+path. The Open screen sorts `..` first, directories before files, and names in
+case-insensitive ASCII order. It includes a right-side peek pane only when the
+selected file has text content to preview.
 
 The top-right status uses private LCD glyph codes for a two-cell, 25%-step
 battery icon. Those glyphs are defined in `mothpad_picocalc_platform.h` and
@@ -146,6 +151,5 @@ whatever delay the keyboard controller applies to its charging bit.
 
 ## What Still Needs The PicoCalc Shell
 
-- new/quit command UI
-- app lifecycle: launch, return result, dirty quit prompt
+- app lifecycle: launch and return result contract
 - public-release notice bundle
