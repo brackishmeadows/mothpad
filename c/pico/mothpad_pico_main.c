@@ -44,14 +44,26 @@ extern struct dirent *readdir(DIR *dir);
 #define MOTH_MAX_DIR_ENTRIES   96
 #define MOTH_MESSAGE_MS        1800
 #define MOTH_BATTERY_MS        250
+#define MOTH_FILE_LIST_COLS    18
+#define MOTH_PREVIEW_X         (MOTH_FILE_LIST_COLS + 1)
+#define MOTH_PREVIEW_COLS      (MOTH_COLS - MOTH_PREVIEW_X)
+#define MOTH_PREVIEW_LINES     (MOTH_TEXT_ROWS - 3)
 
 typedef enum {
     PICO_MODE_EDITING = 0,
     PICO_MODE_FILE_MENU,
     PICO_MODE_FILE_LIST,
     PICO_MODE_SAVE_AS,
+    PICO_MODE_DIRTY_CONFIRM,
     PICO_MODE_ERROR_MESSAGE,
 } PicoMode;
+
+typedef enum {
+    PICO_DIRTY_NONE = 0,
+    PICO_DIRTY_NEW,
+    PICO_DIRTY_OPEN,
+    PICO_DIRTY_REBOOT,
+} PicoDirtyAction;
 
 typedef struct {
     char ch;
@@ -84,9 +96,17 @@ static PicoDirEntry g_entries[MOTH_MAX_DIR_ENTRIES];
 static int g_entry_count;
 static int g_entry_selected;
 static int g_entry_scroll;
+static int g_preview_selected = -1;
+static char g_preview_cwd[256];
+static char g_preview_lines[MOTH_PREVIEW_LINES][MOTH_PREVIEW_COLS + 1];
+static int g_preview_line_count;
+static int g_preview_visible;
 
 static char g_save_name[256];
 static int g_save_name_len;
+static PicoDirtyAction g_after_save_action = PICO_DIRTY_NONE;
+static PicoDirtyAction g_dirty_action = PICO_DIRTY_NONE;
+static int g_dirty_selected;
 
 static const char *g_file_menu_items[] = {
     "New",
@@ -96,6 +116,10 @@ static const char *g_file_menu_items[] = {
     "Reboot",
 };
 static int g_file_menu_selected;
+
+static void pico_perform_dirty_action(PicoDirtyAction action);
+static void pico_draw_popup_box(int x, int y, int width, int height);
+static void pico_update_file_preview(void);
 
 static int mothpad_pico_color(uint8_t color)
 {
@@ -281,15 +305,39 @@ static void pico_render_editing(void)
 
 static void pico_render_save_as(void)
 {
+    const int x = 4;
+    const int y = 6;
+    const int width = 24;
+    const int height = 5;
+    const int field_y = y + 2;
+    const int field_width = width - 4;
+    int text_start = 0;
+    int cursor_x;
+
     pico_render_editing();
-    pico_fill_row(MOTH_BOTTOM_ROW, 0, 7, MOTH_CELL_STATUS);
-    pico_draw_text(0, MOTH_BOTTOM_ROW, "Save as: ", 0, 7, MOTH_CELL_STATUS);
-    pico_draw_text(9, MOTH_BOTTOM_ROW, g_save_name, 0, 7, MOTH_CELL_STATUS);
+    pico_draw_popup_box(x, y, width, height);
+    pico_draw_text(x + 2, y + 1, "Save as", 7, 0, MOTH_CELL_STATUS);
+
+    for(int col = 2; col < width - 2; ++col) pico_put_cell(x + col, field_y, ' ', 0, 7, MOTH_CELL_SELECTION);
+    if(g_save_name_len >= field_width) text_start = g_save_name_len - field_width + 1;
+    for(int i = 0; i < field_width && g_save_name[text_start + i]; ++i)
+    {
+        pico_put_cell(x + 2 + i, field_y, g_save_name[text_start + i], 0, 7, MOTH_CELL_SELECTION);
+    }
+    cursor_x = x + 2 + g_save_name_len - text_start;
+    if(cursor_x >= x + width - 2) cursor_x = x + width - 3;
+    pico_put_cell(cursor_x, field_y, '_', 0, 7, MOTH_CELL_SELECTION);
+    pico_draw_text(x + 2, y + 3, "Enter save  Esc cancel", 7, 0, MOTH_CELL_STATUS);
 }
 
 static void pico_render_file_list(void)
 {
     char top[96];
+    int preview_row = MOTH_TEXT_FIRST_ROW + 3;
+    int list_cols = g_preview_visible ? MOTH_FILE_LIST_COLS : MOTH_COLS;
+
+    pico_update_file_preview();
+    list_cols = g_preview_visible ? MOTH_FILE_LIST_COLS : MOTH_COLS;
     pico_clear_cells();
     pico_fill_row(MOTH_TOP_ROW, 0, 7, MOTH_CELL_STATUS);
     pico_fill_row(MOTH_BOTTOM_ROW, 0, 7, MOTH_CELL_STATUS);
@@ -301,23 +349,47 @@ static void pico_render_file_list(void)
     for(int row = 0; row < MOTH_TEXT_ROWS; ++row)
     {
         int entry_index = g_entry_scroll + row;
-        if(entry_index >= g_entry_count) break;
+        int y = MOTH_TEXT_FIRST_ROW + row;
 
         uint8_t fg = 7;
         uint8_t bg = 0;
         uint8_t flags = 0;
-        char line[300];
+        char line[MOTH_COLS + 1];
+
+        if(g_preview_visible) pico_put_cell(MOTH_FILE_LIST_COLS, y, PICOCALC_GLYPH_MENU_VL, 7, 0, MOTH_CELL_STATUS);
+        if(entry_index >= g_entry_count) continue;
 
         if(entry_index == g_entry_selected)
         {
             fg = 0;
             bg = 7;
             flags = MOTH_CELL_SELECTION;
-            pico_fill_row(MOTH_TEXT_FIRST_ROW + row, fg, bg, flags);
+            for(int col = 0; col < list_cols; ++col) pico_put_cell(col, y, ' ', fg, bg, flags);
         }
 
-        snprintf(line, sizeof(line), "%c %s", g_entries[entry_index].is_dir ? '/' : ' ', g_entries[entry_index].name);
-        pico_draw_text(0, MOTH_TEXT_FIRST_ROW + row, line, fg, bg, flags);
+        snprintf(line, sizeof(line), "%c %-*.*s",
+                 g_entries[entry_index].is_dir ? '/' : ' ',
+                 list_cols - 3,
+                 list_cols - 3,
+                 g_entries[entry_index].name);
+        pico_draw_text(0, y, line, fg, bg, flags);
+    }
+
+    if(g_preview_visible)
+    {
+        pico_draw_text(MOTH_PREVIEW_X, MOTH_TEXT_FIRST_ROW, "Peek", 7, 0, MOTH_CELL_STATUS);
+        if(g_entry_count > 0 && g_entry_selected >= 0 && g_entry_selected < g_entry_count)
+        {
+            char selected[32];
+            snprintf(selected, sizeof(selected), "%.20s", g_entries[g_entry_selected].name);
+            pico_draw_text(MOTH_PREVIEW_X, MOTH_TEXT_FIRST_ROW + 1, selected, 7, 0, MOTH_CELL_STATUS);
+        }
+        pico_draw_hline(MOTH_PREVIEW_X, MOTH_TEXT_FIRST_ROW + 2, MOTH_PREVIEW_COLS, PICOCALC_GLYPH_MENU_HT, 7, 0, MOTH_CELL_STATUS);
+
+        for(int row = 0; row < g_preview_line_count && row < MOTH_PREVIEW_LINES; ++row)
+        {
+            pico_draw_text(MOTH_PREVIEW_X, preview_row + row, g_preview_lines[row], 7, 0, 0);
+        }
     }
 
     pico_draw_text(0, MOTH_BOTTOM_ROW, "Enter open  Esc cancel", 0, 7, MOTH_CELL_STATUS);
@@ -353,6 +425,48 @@ static void pico_render_file_menu(void)
     pico_put_cell(x + width - 1, y + count + 1, PICOCALC_GLYPH_MENU_BR, 7, 0, MOTH_CELL_STATUS);
 }
 
+static void pico_draw_popup_box(int x, int y, int width, int height)
+{
+    pico_put_cell(x, y, PICOCALC_GLYPH_MENU_TL, 7, 0, MOTH_CELL_STATUS);
+    pico_draw_hline(x + 1, y, width - 2, PICOCALC_GLYPH_MENU_HT, 7, 0, MOTH_CELL_STATUS);
+    pico_put_cell(x + width - 1, y, PICOCALC_GLYPH_MENU_TR, 7, 0, MOTH_CELL_STATUS);
+
+    for(int row = 1; row < height - 1; ++row)
+    {
+        for(int col = 0; col < width; ++col) pico_put_cell(x + col, y + row, ' ', 7, 0, MOTH_CELL_STATUS);
+        pico_put_cell(x, y + row, PICOCALC_GLYPH_MENU_VL, 7, 0, MOTH_CELL_STATUS);
+        pico_put_cell(x + width - 1, y + row, PICOCALC_GLYPH_MENU_VR, 7, 0, MOTH_CELL_STATUS);
+    }
+
+    pico_put_cell(x, y + height - 1, PICOCALC_GLYPH_MENU_BL, 7, 0, MOTH_CELL_STATUS);
+    pico_draw_hline(x + 1, y + height - 1, width - 2, PICOCALC_GLYPH_MENU_HB, 7, 0, MOTH_CELL_STATUS);
+    pico_put_cell(x + width - 1, y + height - 1, PICOCALC_GLYPH_MENU_BR, 7, 0, MOTH_CELL_STATUS);
+}
+
+static void pico_render_dirty_confirm(void)
+{
+    static const char *items[] = { "Cancel", "Quit", "Save+Quit" };
+    const int x = 6;
+    const int y = 5;
+    const int width = 20;
+    const int height = 7;
+
+    pico_render_editing();
+    pico_draw_popup_box(x, y, width, height);
+    pico_draw_text(x + 2, y + 1, "Unsaved changes", 7, 0, MOTH_CELL_STATUS);
+
+    for(int i = 0; i < 3; ++i)
+    {
+        int row = y + 2 + i;
+        uint8_t fg = (i == g_dirty_selected) ? 0 : 7;
+        uint8_t bg = (i == g_dirty_selected) ? 7 : 0;
+        uint8_t flags = (i == g_dirty_selected) ? MOTH_CELL_SELECTION : MOTH_CELL_STATUS;
+
+        for(int col = 1; col < width - 1; ++col) pico_put_cell(x + col, row, ' ', fg, bg, flags);
+        pico_draw_text(x + 2, row, items[i], fg, bg, flags);
+    }
+}
+
 static void pico_render(void)
 {
     if(g_mode == PICO_MODE_FILE_MENU)
@@ -366,6 +480,10 @@ static void pico_render(void)
     else if(g_mode == PICO_MODE_SAVE_AS)
     {
         pico_render_save_as();
+    }
+    else if(g_mode == PICO_MODE_DIRTY_CONFIRM)
+    {
+        pico_render_dirty_confirm();
     }
     else
     {
@@ -445,6 +563,112 @@ static void pico_enter_dir(const char *name)
     }
 }
 
+static void pico_preview_clear(const char *message)
+{
+    memset(g_preview_lines, 0, sizeof(g_preview_lines));
+    g_preview_line_count = 0;
+    g_preview_visible = 0;
+    if(message && message[0])
+    {
+        snprintf(g_preview_lines[0], sizeof(g_preview_lines[0]), "%s", message);
+        g_preview_line_count = 1;
+    }
+}
+
+static void pico_preview_append_char(char ch)
+{
+    int line;
+    int len;
+
+    if(g_preview_line_count <= 0) g_preview_line_count = 1;
+    if(g_preview_line_count > MOTH_PREVIEW_LINES) return;
+
+    line = g_preview_line_count - 1;
+    len = (int)strlen(g_preview_lines[line]);
+    if(ch == '\n')
+    {
+        if(g_preview_line_count < MOTH_PREVIEW_LINES) ++g_preview_line_count;
+        return;
+    }
+    if(ch == '\t') ch = ' ';
+    if(len >= MOTH_PREVIEW_COLS)
+    {
+        if(g_preview_line_count >= MOTH_PREVIEW_LINES) return;
+        ++g_preview_line_count;
+        line = g_preview_line_count - 1;
+        len = 0;
+    }
+
+    g_preview_lines[line][len] = ch;
+    g_preview_lines[line][len + 1] = 0;
+}
+
+static void pico_update_file_preview(void)
+{
+    char path[256];
+    FILE *file;
+    int saw_text = 0;
+
+    if(g_preview_selected == g_entry_selected && strcmp(g_preview_cwd, g_cwd) == 0) return;
+
+    g_preview_selected = g_entry_selected;
+    snprintf(g_preview_cwd, sizeof(g_preview_cwd), "%s", g_cwd);
+
+    if(g_entry_count <= 0 || g_entry_selected < 0 || g_entry_selected >= g_entry_count)
+    {
+        pico_preview_clear("No files");
+        return;
+    }
+
+    if(g_entries[g_entry_selected].is_dir)
+    {
+        pico_preview_clear(NULL);
+        return;
+    }
+
+    if(moth_join_path(path, sizeof(path), g_cwd, g_entries[g_entry_selected].name) != MOTH_OK)
+    {
+        pico_preview_clear("Bad path");
+        return;
+    }
+
+    file = fopen(path, "rb");
+    if(!file)
+    {
+        pico_preview_clear("No preview");
+        return;
+    }
+
+    pico_preview_clear(NULL);
+    for(int i = 0; i < 768; ++i)
+    {
+        int c = fgetc(file);
+        if(c == EOF) break;
+        if(c == 0 || (c < 32 && c != '\n' && c != '\r' && c != '\t'))
+        {
+            fclose(file);
+            pico_preview_clear("No text preview");
+            return;
+        }
+        if(c == '\r') continue;
+        if(c >= 32 || c == '\n' || c == '\t')
+        {
+            pico_preview_append_char((char)c);
+            if(c != '\n' && c != '\t' && c != ' ') saw_text = 1;
+        }
+    }
+
+    fclose(file);
+    if(!saw_text)
+    {
+        pico_preview_clear(NULL);
+    }
+    else
+    {
+        g_preview_visible = 1;
+    }
+}
+
 static int pico_refresh_file_list(void)
 {
     DIR *dir;
@@ -477,6 +701,7 @@ static int pico_refresh_file_list(void)
     }
 
     closedir(dir);
+    g_preview_selected = -1;
     return 1;
 }
 
@@ -509,7 +734,14 @@ static int pico_save_path(const char *path)
     return 1;
 }
 
-static void pico_begin_open(void)
+static void pico_begin_dirty_confirm(PicoDirtyAction action)
+{
+    g_dirty_action = action;
+    g_dirty_selected = 0;
+    g_mode = PICO_MODE_DIRTY_CONFIRM;
+}
+
+static void pico_begin_open_unchecked(void)
 {
     if(!g_sd_ready)
     {
@@ -523,18 +755,35 @@ static void pico_begin_open(void)
     }
 }
 
-static void pico_begin_save_as(void)
+static void pico_begin_open(void)
+{
+    if(g_mothpad.dirty)
+    {
+        pico_begin_dirty_confirm(PICO_DIRTY_OPEN);
+        return;
+    }
+
+    pico_begin_open_unchecked();
+}
+
+static void pico_begin_save_as_after(PicoDirtyAction action)
 {
     g_save_name[0] = 0;
     g_save_name_len = 0;
+    g_after_save_action = action;
     g_mode = PICO_MODE_SAVE_AS;
+}
+
+static void pico_begin_save_as(void)
+{
+    pico_begin_save_as_after(PICO_DIRTY_NONE);
 }
 
 static void pico_new_file(void)
 {
     if(g_mothpad.dirty)
     {
-        pico_set_message("Save first");
+        pico_begin_dirty_confirm(PICO_DIRTY_NEW);
         return;
     }
 
@@ -565,12 +814,39 @@ static void pico_reboot(void)
 {
     if(g_mothpad.dirty)
     {
-        pico_set_message("Save first");
+        pico_begin_dirty_confirm(PICO_DIRTY_REBOOT);
         return;
     }
 
     watchdog_reboot(0, 0, 0);
     for(;;) tight_loop_contents();
+}
+
+static void pico_perform_dirty_action(PicoDirtyAction action)
+{
+    g_dirty_action = PICO_DIRTY_NONE;
+
+    switch(action)
+    {
+        case PICO_DIRTY_NEW:
+            moth_init(&g_mothpad);
+            moth_set_text(&g_mothpad, "");
+            g_mode = PICO_MODE_EDITING;
+            pico_set_message("New file");
+            break;
+        case PICO_DIRTY_OPEN:
+            g_mode = PICO_MODE_EDITING;
+            pico_begin_open_unchecked();
+            break;
+        case PICO_DIRTY_REBOOT:
+            watchdog_reboot(0, 0, 0);
+            for(;;) tight_loop_contents();
+            break;
+        case PICO_DIRTY_NONE:
+        default:
+            g_mode = PICO_MODE_EDITING;
+            break;
+    }
 }
 
 static void pico_begin_file_menu(void)
@@ -716,6 +992,7 @@ static int pico_handle_file_list_key(int key)
     switch(key)
     {
         case PICOCALC_KEY_ESC:
+            g_after_save_action = PICO_DIRTY_NONE;
             g_mode = PICO_MODE_EDITING;
             return 1;
         case PICOCALC_KEY_UP:
@@ -762,17 +1039,35 @@ static int pico_handle_save_as_key(int key)
             if(g_save_name_len == 0)
             {
                 pico_set_message("Name required");
+                g_after_save_action = PICO_DIRTY_NONE;
                 g_mode = PICO_MODE_EDITING;
                 return 1;
             }
             if(moth_join_path(path, sizeof(path), g_cwd, g_save_name) != MOTH_OK)
             {
                 pico_set_message("Bad filename");
+                g_after_save_action = PICO_DIRTY_NONE;
                 g_mode = PICO_MODE_EDITING;
                 return 1;
             }
-            pico_save_path(path);
-            g_mode = PICO_MODE_EDITING;
+            if(pico_save_path(path))
+            {
+                PicoDirtyAction action = g_after_save_action;
+                g_after_save_action = PICO_DIRTY_NONE;
+                if(action != PICO_DIRTY_NONE)
+                {
+                    pico_perform_dirty_action(action);
+                }
+                else
+                {
+                    g_mode = PICO_MODE_EDITING;
+                }
+            }
+            else
+            {
+                g_after_save_action = PICO_DIRTY_NONE;
+                g_mode = PICO_MODE_EDITING;
+            }
             return 1;
         default:
             break;
@@ -788,11 +1083,83 @@ static int pico_handle_save_as_key(int key)
     return 0;
 }
 
+static int pico_handle_dirty_confirm_key(int key)
+{
+    PicoDirtyAction action;
+
+    if(key < 0) return 0;
+    switch(key)
+    {
+        case PICOCALC_KEY_ESC:
+        case 'c':
+        case 'C':
+            g_dirty_action = PICO_DIRTY_NONE;
+            g_mode = PICO_MODE_EDITING;
+            return 1;
+        case PICOCALC_KEY_UP:
+            if(g_dirty_selected > 0) --g_dirty_selected;
+            return 1;
+        case PICOCALC_KEY_DOWN:
+            if(g_dirty_selected < 2) ++g_dirty_selected;
+            return 1;
+        case 'q':
+        case 'Q':
+            g_dirty_selected = 1;
+            break;
+        case 's':
+        case 'S':
+            g_dirty_selected = 2;
+            break;
+        case PICOCALC_KEY_ENTER:
+        case '\r':
+            break;
+        default:
+            return 0;
+    }
+
+    action = g_dirty_action;
+    if(g_dirty_selected == 0)
+    {
+        g_dirty_action = PICO_DIRTY_NONE;
+        g_mode = PICO_MODE_EDITING;
+    }
+    else if(g_dirty_selected == 1)
+    {
+        pico_perform_dirty_action(action);
+    }
+    else if(g_dirty_selected == 2)
+    {
+        if(!g_sd_ready)
+        {
+            pico_set_message("No SD mount");
+            g_dirty_action = PICO_DIRTY_NONE;
+            g_mode = PICO_MODE_EDITING;
+        }
+        else if(g_mothpad.path[0])
+        {
+            if(pico_save_path(g_mothpad.path)) pico_perform_dirty_action(action);
+            else
+            {
+                g_dirty_action = PICO_DIRTY_NONE;
+                g_mode = PICO_MODE_EDITING;
+            }
+        }
+        else
+        {
+            g_dirty_action = PICO_DIRTY_NONE;
+            pico_begin_save_as_after(action);
+        }
+    }
+
+    return 1;
+}
+
 static int pico_handle_key(int key)
 {
     if(g_mode == PICO_MODE_FILE_MENU) return pico_handle_file_menu_key(key);
     if(g_mode == PICO_MODE_FILE_LIST) return pico_handle_file_list_key(key);
     if(g_mode == PICO_MODE_SAVE_AS) return pico_handle_save_as_key(key);
+    if(g_mode == PICO_MODE_DIRTY_CONFIRM) return pico_handle_dirty_confirm_key(key);
     return pico_handle_editing_key(key);
 }
 
