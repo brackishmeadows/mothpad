@@ -45,17 +45,27 @@ which renders cells to the PicoCalc LCD through `mothpad_picocalc_platform.c`,
 polls the PicoCalc keyboard through that same shim, and mounts the SD card
 through `pico-vfs`.
 
-This is an SD-backed edit build, not the full PicoCalc editor layer.
+This is an SD-backed PicoCalc editor shell with menus, find, undo, selection,
+clipboard, battery display, and safe-save behavior.
 
-Build result on 2026-07-05: Pico SDK and MSYS2 ARM toolchain installed. The
-`pico2_w` target builds successfully and emits:
+Build result on 2026-07-06: Pico SDK and MSYS2 ARM toolchain installed. The
+`pico2_w` target builds successfully. The default wrapper output is:
 
 ```text
 c/pico/build-pico2_w/mothpad_pico_legacy.uf2
 c/pico/build-pico2_w/mothpad_pico.uf2
 ```
 
+Current hardware tuning builds have used:
+
+```text
+c/pico/build-pico2_w_mothpad/mothpad_pico_legacy.uf2
+c/pico/build-pico2_w_mothpad/mothpad_pico.uf2
+```
+
 Host C tests also pass via `c/build.ps1`.
+Boot now flashes the embedded `mothpad-splash.png` artwork for about half a
+second before the editor or recovery prompt appears.
 
 The current PicoCalc grid is `40x26`, based on 8x12 cells on the 320x320 LCD.
 Rows 0 and 25 are status bars; rows 1 through 24 are document viewport rows.
@@ -73,20 +83,44 @@ End.
 Current file behavior: boots into a blank document, uses Ctrl+S for save/save-as,
 uses Ctrl+O for a current-directory file list, uses Ctrl+Z for bounded
 single-character undo, and keeps editing in memory if SD mount fails. F1 opens a
-small File menu for New, Open, Save, Save As, and Reboot. Dirty New, Open, and
-Reboot actions open an Unsaved Changes popup with Cancel, Quit, and Save+Quit
-choices. The Open screen shows a right-side peek pane only when the selected
-file has text content to preview, with `..` first, directories before files, and
+small File menu for New, Open, Save, Save As, and Reboot. F2, or F1 then Right,
+opens an Edit menu for Undo, Cut Line, Copy Line, and Paste. F3, or F1 then
+Right twice, opens a Select menu for Find, Select All, and Select None. The
+first clipboard is internal to the running app session. Shift+Arrow selection is
+wired through the clean keyboard shim; the clean target also explicitly enables
+keyboard modifier reporting with the documented default keyboard config and
+treats shifted Up/Down's PageUp/PageDown events as selection movement. Because
+some keyboard firmware does not report Shift modifier FIFO events reliably, the
+clean shim samples the C64 matrix for physical Shift and uses the joystick
+register to synthesize Shift+Left/Right selection while Shift is down. Selected
+text is highlighted and Copy/Cut use the selection when present, falling back to
+the current line otherwise; menu labels shorten to Copy/Cut while a selection
+exists. Paste, selection deletion, and cut-line deletion undo as grouped edits.
+Find uses a centered prompt, selects the found match, and repeats the previous
+query on Ctrl+F. Dirty New, Open, and Reboot actions open an Unsaved Changes
+popup with Cancel, Quit, and Save+Quit choices. Dirty editing writes a single
+global recovery file, `/.mothpad-recovery.txt`, after 8 seconds of quiet input.
+On boot, Mothpad asks whether to open that recovery file. Opening it loads an
+unnamed dirty draft; manual save remains explicit.
+File has a checkbox-glyph Keep Backups boolean item controlling `.bak` creation.
+View has checkbox-glyph Wrap and Write Lock toggles; F4 opens View and F5 toggles
+Write Lock. Write Lock blocks mutating edit actions while preserving navigation
+and copy.
+The Open screen shows a right-side peek pane only when the selected file has
+text content to preview, with `..` first, directories before files, and
 case-insensitive ASCII name sorting. The top status row shows a private
-two-cell, 25%-step battery glyph plus percent when the keyboard controller
-reports it. Private UI glyphs now render full-cell while text glyphs keep their
-padded 5x7 placement, so menu box pieces can connect. The SD stack uses
+two-cell, 25%-step battery glyph and percent when the keyboard controller
+reports it; the bottom-right status corner shows a two-cell moth logo. Private
+UI glyphs now render full-cell while text glyphs keep their padded 5x7
+placement, so menu box pieces and logo halves can connect. The SD stack uses
 `pico-vfs` with FatFs over SPI0 pins 18/19/16/17 plus detect pin 22.
 
-Hardware posture as of 2026-07-05: `mothpad_pico.uf2` is a clean-build PicoCalc
+Hardware posture as of 2026-07-06: `mothpad_pico.uf2` is a clean-build PicoCalc
 hardware success through Pelrun's UF2 Loader. It edits live, uses SD-backed
 open/save, and renders without the previous cyan shimmer after reasserting LCD
 pixel format `0x3A = 0x66` after the final display mode/MADCTL writes.
+Shift+Left/Right selection is hardware-tuned through joystick-register
+synthesis; see `docs/shift-left-right-report.md`.
 
 Licensing posture as of 2026-07-05: the clean target no longer compiles
 ClockworkPi hello-world LCD/keyboard source. It still depends on Pico SDK,
@@ -108,12 +142,21 @@ as fallback, not the public-release posture. See `../THIRD_PARTY.md`.
 1. Run the C host tests.
 2. Harden safe-save behavior for the target filesystem.
 3. Run the hardware acceptance pass: save-as, reopen, edit, verify `.bak`.
-4. Add basic find.
+4. Run hardware acceptance on the menu, selection, find, and clipboard surface.
 5. Expand the File menu only after the current shallow version is proven on
    hardware.
+
+Field report note: the first real bus/meetup writing test is preserved in
+`docs/field-report-2026-06-07-southbank.md`. Its highest-value follow-ups are
+Backspace off-by-one investigation, accidental selection while holding
+Left/Right, Open Recent, create-directory, soft wrap, and a write-lock or
+scroll-only carry mode.
 
 ## Source References
 
 - `docs/mothpad-spec.md`
 - `docs/refterm-reading.md`
 - `docs/build-handoff.md`
+- `docs/shift-left-right-report.md`
+- `docs/field-report-2026-06-07-southbank.md`
+- `docs/picocalc-software-ideas.md`

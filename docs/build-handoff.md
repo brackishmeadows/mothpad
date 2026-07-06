@@ -1,8 +1,8 @@
 # Mothpad Build Handoff
 
-Status: SD-backed edit build
+Status: SD-backed PicoCalc app build
 
-Date verified: 2026-07-05
+Date verified: 2026-07-06
 
 ## What Builds
 
@@ -11,16 +11,14 @@ Mothpad currently has two verified local build paths:
 - Host C tests on Windows using MSYS2 GCC.
 - Pico SDK firmware build for `pico2_w`, producing clean and legacy UF2s.
 
-The verified Pico UF2 is not the full PicoCalc editor UI yet. It initializes
-the Mothpad C core, renders the `MothCell` grid to the PicoCalc LCD, accepts
-basic keyboard editing, mounts the SD card through `pico-vfs`, and supports
-minimal open/save.
+The verified Pico UF2 initializes the Mothpad C core, renders the `MothCell`
+grid to the PicoCalc LCD, accepts keyboard editing, mounts the SD card through
+`pico-vfs`, supports open/save, menus, find, undo, selection, clipboard, and
+hardware-tuned Shift+Arrow selection.
 
 Important hardware note: `mothpad_pico.uf2` is the known-good clean PicoCalc
-build as of 2026-07-05. The clean LCD path needs two fixes: wait for SPI idle
-before releasing LCD chip-select, and reassert LCD pixel format `0x3A = 0x66`
-after the final display mode/MADCTL writes. Keep `mothpad_pico_legacy.uf2` as
-fallback only.
+build as of 2026-07-06 through Pelrun's UF2 Loader. Keep
+`mothpad_pico_legacy.uf2` as fallback only.
 
 ## Important Paths
 
@@ -48,6 +46,16 @@ Generated UF2:
 picocalc\mothpad\c\pico\build-pico2_w\mothpad_pico_legacy.uf2
 picocalc\mothpad\c\pico\build-pico2_w\mothpad_pico.uf2
 ```
+
+During hardware tuning, the working build directory has often been:
+
+```text
+picocalc\mothpad\c\pico\build-pico2_w_mothpad\mothpad_pico.uf2
+picocalc\mothpad\c\pico\build-pico2_w_mothpad\mothpad_pico_legacy.uf2
+```
+
+Both are valid if built with the same script and board. The `-BuildDir`
+argument controls this path.
 
 Pico VFS dependency:
 
@@ -117,6 +125,19 @@ $env:PICO_SDK_PATH = (Resolve-Path 'picocalc\toolchains\pico-sdk').Path
 powershell -ExecutionPolicy Bypass -File .\picocalc\mothpad\c\pico\build-pico.ps1 -Board pico2_w
 ```
 
+That default command writes to:
+
+```text
+picocalc\mothpad\c\pico\build-pico2_w
+```
+
+Current tuning/testing has used an explicit build directory:
+
+```powershell
+$env:PICO_SDK_PATH = (Resolve-Path 'picocalc\toolchains\pico-sdk').Path
+powershell -ExecutionPolicy Bypass -File .\picocalc\mothpad\c\pico\build-pico.ps1 -Board pico2_w -BuildDir .\picocalc\mothpad\c\pico\build-pico2_w_mothpad
+```
+
 Expected artifact:
 
 ```text
@@ -124,11 +145,17 @@ picocalc\mothpad\c\pico\build-pico2_w\mothpad_pico_legacy.uf2
 picocalc\mothpad\c\pico\build-pico2_w\mothpad_pico.uf2
 ```
 
-Last verified size:
+Or, with the explicit tuning directory:
 
 ```text
-mothpad_pico.uf2        336896 bytes
-mothpad_pico_legacy.uf2 342528 bytes
+picocalc\mothpad\c\pico\build-pico2_w_mothpad\mothpad_pico_legacy.uf2
+picocalc\mothpad\c\pico\build-pico2_w_mothpad\mothpad_pico.uf2
+```
+
+Last verified size in `build-pico2_w_mothpad`:
+
+```text
+mothpad_pico.uf2        382464 bytes
 ```
 
 Current PicoCalc cell geometry:
@@ -172,9 +199,17 @@ Expected behavior on this build:
 - Printable keys should insert text.
 - Arrows should move the cursor.
 - Enter, Tab, Backspace, Delete, Home, and End should work.
+- F1 should open the File menu.
+- F2 should open the Edit menu.
+- F3 should open the Select menu.
 - Ctrl+S should save the current file, or open a save-as prompt if unnamed.
 - Ctrl+O should open a file list for the current directory.
+- Ctrl+F should open Find, then repeat the previous query on later Ctrl+F.
 - Ctrl+Z should undo the last edit while undo history is available.
+- Ctrl+C / Ctrl+X / Ctrl+V should use the internal clipboard.
+- Shift+Arrow should extend selection.
+- Quick Shift+Left/Right taps should select one character; held
+  Shift+Left/Right should repeat quickly.
 - Save uses `.tmp` and `.bak` rename behavior from the core safe-save path.
 - If SD mount fails, the editor remains usable in memory and shows a short error.
 
@@ -217,6 +252,12 @@ SD-backed build note: this build populated ClockworkPi's declared
 at `/` using SPI0 pins SCK 18, MOSI 19, MISO 16, CS 17, detect 22. It does not
 format on mount failure.
 
+Shift-selection build note: hardware testing on 2026-07-06 confirmed
+Shift+Left/Right selection through the joystick register path. The final tuning
+is documented in `docs/shift-left-right-report.md`: 100kHz keyboard I2C,
+250us keyboard register settle, 180ms initial repeat delay, 22ms held repeat,
+and 90ms release debounce.
+
 ## Common Failure Modes
 
 `PICO_SDK_PATH is not set`
@@ -242,13 +283,12 @@ network is sandboxed, rerun with escalation.
 
 ## Next Build Work
 
-The next useful engineering step is the SD acceptance pass, then the rest of
-the editor shell:
+The next useful engineering step is a fresh acceptance pass and then committing
+the current known-good state:
 
 - verify save-as, reopen, edit, save-again, and `.bak` behavior on SD.
-- save result / return-to-caller contract.
-- new/quit command UI.
-- better file list sorting/filtering.
-- a public-release notice bundle for Pico SDK, `pico-vfs`, and FatFs.
+- verify menus, selection, find, clipboard, and dirty-quit popups.
+- verify Shift+Left/Right remains good after any keyboard timing change.
+- keep public-release notice bundle current for Pico SDK, `pico-vfs`, and FatFs.
 
 Do not bury those inside `mothpad.c`. The core is clean. Keep it clean.

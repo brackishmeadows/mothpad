@@ -57,8 +57,9 @@ static void diag_screen_base(void)
     diag_text(0, 2, "IF YOU SEE THIS, LCD TEXT WORKS.", PICOCALC_COLOR_WHITE, PICOCALC_COLOR_BLACK);
     diag_text(0, 4, "PRESS KEYS. RAW PACKET SHOULD CHANGE.", PICOCALC_COLOR_WHITE, PICOCALC_COLOR_BLACK);
     diag_text(0, 6, "RAW: ----  KEY: ---", PICOCALC_COLOR_WHITE, PICOCALC_COLOR_BLACK);
-    diag_text(0, 8, "CTRL+S AND CTRL+O SHOULD SHOW KEY 019/015.", PICOCALC_COLOR_WHITE, PICOCALC_COLOR_BLACK);
-    diag_text(0, 10, "GLYPHS: abc xyz ~ { } [ ] \\ |", PICOCALC_COLOR_WHITE, PICOCALC_COLOR_BLACK);
+    diag_text(0, 8, "MTX: -- -- -- -- -- -- -- -- --  SH:-", PICOCALC_COLOR_WHITE, PICOCALC_COLOR_BLACK);
+    diag_text(0, 10, "CTRL+S/O KEY 019/015. SHIFT SHOULD SH:1", PICOCALC_COLOR_WHITE, PICOCALC_COLOR_BLACK);
+    diag_text(0, 11, "GLYPHS: abc xyz ~ { } [ ] \\ |", PICOCALC_COLOR_WHITE, PICOCALC_COLOR_BLACK);
     diag_text(0, 12, "3RGB:", PICOCALC_COLOR_WHITE, PICOCALC_COLOR_BLACK);
     diag_color_blocks(6, 12, PICOCALC_COLOR_ORDER_RGB, 18);
     diag_text(0, 13, "3RBG:", PICOCALC_COLOR_WHITE, PICOCALC_COLOR_BLACK);
@@ -93,6 +94,8 @@ int main(void)
 {
     char line[40];
     uint16_t last_raw = 0xffff;
+    uint8_t last_matrix[9] = {0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff};
+    int last_shift = -1;
 
     stdio_init_all();
     sleep_ms(250);
@@ -112,6 +115,25 @@ int main(void)
             diag_text(0, 6, "RAW: ----  KEY:---  ST:---", PICOCALC_COLOR_WHITE, PICOCALC_COLOR_BLACK);
             diag_text(0, 6, line, PICOCALC_COLOR_WHITE, PICOCALC_COLOR_BLACK);
             last_raw = raw;
+        }
+
+        uint8_t matrix[9];
+        if(picocalc_kbd_read_matrix(matrix, sizeof(matrix)) == 0)
+        {
+            int changed = memcmp(matrix, last_matrix, sizeof(matrix)) != 0;
+            int shift = ((matrix[2] & 0x80) == 0) || ((matrix[3] & 0x80) == 0);
+            if(changed || shift != last_shift)
+            {
+                snprintf(line,
+                         sizeof(line),
+                         "MTX:%02X %02X %02X %02X %02X %02X %02X %02X %02X SH:%d",
+                         matrix[0], matrix[1], matrix[2], matrix[3], matrix[4],
+                         matrix[5], matrix[6], matrix[7], matrix[8], shift);
+                diag_text(0, 8, "MTX: -- -- -- -- -- -- -- -- --  SH:-", PICOCALC_COLOR_WHITE, PICOCALC_COLOR_BLACK);
+                diag_text(0, 8, line, PICOCALC_COLOR_WHITE, PICOCALC_COLOR_BLACK);
+                memcpy(last_matrix, matrix, sizeof(matrix));
+                last_shift = shift;
+            }
         }
 
         sleep_ms(20);

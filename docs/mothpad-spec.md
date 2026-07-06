@@ -88,6 +88,10 @@ Required:
 - Edit text.
 - Save safely.
 - Save as.
+- Write a single global recovery file after a short quiet period.
+- Toggle soft wrap from the View menu.
+- Toggle write lock / scroll-only mode from the View menu.
+- Toggle whether manual save keeps a `.bak` backup from the File menu.
 - Show filename and dirty flag.
 - Cursor movement.
 - Scrolling.
@@ -124,8 +128,22 @@ Recommended save pattern:
 4. Replace original with temp.
 5. Clear dirty flag only after success.
 
+The `.bak` step should be user-controllable. When `Keep Backups` is off, manual
+save still writes through a temp file but does not preserve the previous version.
+
 If power dies or the SD card gets weird, the text should have a way to crawl out
 wearing a little helmet.
+
+Autosave must not silently overwrite the primary file. For v0.1, the editor
+writes one global recovery file:
+
+```text
+/.mothpad-recovery.txt
+```
+
+On boot, if that file exists, Mothpad asks whether to open it. Opening recovery
+loads it as an unnamed dirty draft so manual save is still explicit. Ignoring
+the recovery file leaves it on disk.
 
 ## File Format Rules
 
@@ -151,14 +169,14 @@ wearing a little helmet.
 A single useful status bar is enough:
 
 ```text
-notes/doglands.txt     Ln 12 Col 08     MOD
+notes/doglands.txt     Ln 12 Col 08     *
 ```
 
 Possible indicators:
 
 - filename/path
 - line and column
-- dirty flag: `MOD`
+- dirty flag: `*`
 - read-only flag: `RO`
 - insert/overwrite only if overwrite ever exists, which it probably should not
   in v0.1

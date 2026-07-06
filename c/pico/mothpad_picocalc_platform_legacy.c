@@ -28,6 +28,16 @@ void picocalc_lcd_put_char(char ch, int flush)
     lcd_put_char(ch, flush);
 }
 
+void picocalc_lcd_draw_mono_bitmap(const uint8_t *bits, int width, int height, int stride, int fg, int bg)
+{
+    (void)bits;
+    (void)width;
+    (void)height;
+    (void)stride;
+    (void)fg;
+    (void)bg;
+}
+
 void picocalc_kbd_init(void)
 {
     init_i2c_kbd();
@@ -37,6 +47,37 @@ int picocalc_kbd_read_raw(uint16_t *out)
 {
     (void)out;
     return -1;
+}
+
+int picocalc_kbd_read_matrix(uint8_t *out, size_t out_size)
+{
+    (void)out;
+    (void)out_size;
+    return -1;
+}
+
+int picocalc_kbd_read_joystick(uint8_t *out)
+{
+    (void)out;
+    return -1;
+}
+
+int picocalc_kbd_read_event(int *key, int *shift)
+{
+    int k = read_i2c_kbd();
+    if(shift) *shift = 0;
+    if(k < 0)
+    {
+        if(key) *key = -1;
+        return -1;
+    }
+    if(key) *key = k;
+    return 0;
+}
+
+int picocalc_kbd_shift_down(void)
+{
+    return 0;
 }
 
 int picocalc_kbd_read(void)

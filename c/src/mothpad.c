@@ -60,12 +60,142 @@ static int moth_rebuild_lines(Mothpad *m)
 
 static void moth_clear_undo(Mothpad *m)
 {
-    if(m) m->undo_count = 0;
+    if(m)
+    {
+        m->undo_count = 0;
+        m->undo_group = 0;
+        m->undo_group_depth = 0;
+        m->next_undo_group = 1;
+    }
+}
+
+void moth_clear_selection(Mothpad *m)
+{
+    if(!m) return;
+    m->selection_active = 0;
+    m->selection_anchor = m->cursor;
+    m->selection_cursor = m->cursor;
+}
+
+void moth_begin_selection(Mothpad *m)
+{
+    if(!m) return;
+    if(!m->selection_active)
+    {
+        m->selection_active = 1;
+        m->selection_anchor = m->cursor;
+        m->selection_cursor = m->cursor;
+    }
+}
+
+void moth_update_selection(Mothpad *m)
+{
+    if(!m) return;
+    if(!m->selection_active) moth_begin_selection(m);
+    m->selection_cursor = m->cursor;
+    if(m->selection_cursor == m->selection_anchor) moth_clear_selection(m);
+}
+
+void moth_select_range(Mothpad *m, int start, int end)
+{
+    if(!m) return;
+    start = moth_clamp_int(start, 0, m->text_len);
+    end = moth_clamp_int(end, 0, m->text_len);
+    if(start == end)
+    {
+        m->cursor = end;
+        moth_clear_selection(m);
+        return;
+    }
+    m->selection_active = 1;
+    m->selection_anchor = start;
+    m->selection_cursor = end;
+    m->cursor = end;
+    m->preferred_col = moth_cursor_col(m);
+}
+
+void moth_select_all(Mothpad *m)
+{
+    if(!m) return;
+    moth_select_range(m, 0, m->text_len);
+}
+
+int moth_has_selection(const Mothpad *m)
+{
+    return m && m->selection_active && m->selection_anchor != m->selection_cursor;
+}
+
+void moth_selection_bounds(const Mothpad *m, int *start, int *end)
+{
+    int a = 0;
+    int b = 0;
+    if(m && moth_has_selection(m))
+    {
+        a = m->selection_anchor;
+        b = m->selection_cursor;
+        if(a > b)
+        {
+            int tmp = a;
+            a = b;
+            b = tmp;
+        }
+    }
+    if(start) *start = a;
+    if(end) *end = b;
+}
+
+MothStatus moth_copy_selection(const Mothpad *m, char *dest, size_t dest_size, int *out_len)
+{
+    int start;
+    int end;
+    int len;
+
+    if(!m || !dest || dest_size == 0) return MOTH_ERR_BAD_ARGUMENT;
+    if(!moth_has_selection(m)) return MOTH_ERR_BAD_ARGUMENT;
+    moth_selection_bounds(m, &start, &end);
+    len = end - start;
+    if((size_t)len >= dest_size) return MOTH_ERR_FULL;
+    memcpy(dest, m->text + start, (size_t)len);
+    dest[len] = 0;
+    if(out_len) *out_len = len;
+    return MOTH_OK;
+}
+
+static void moth_capture_undo_before(const Mothpad *m, MothUndoRecord *undo)
+{
+    if(!m || !undo) return;
+    undo->cursor_before = m->cursor;
+    undo->dirty_before = m->dirty;
+    undo->selection_active_before = m->selection_active;
+    undo->selection_anchor_before = m->selection_anchor;
+    undo->selection_cursor_before = m->selection_cursor;
+}
+
+static void moth_restore_undo_before(Mothpad *m, const MothUndoRecord *undo)
+{
+    if(!m || !undo) return;
+
+    if(undo->selection_active_before && undo->selection_anchor_before != undo->selection_cursor_before)
+    {
+        m->selection_active = 1;
+        m->selection_anchor = moth_clamp_int(undo->selection_anchor_before, 0, m->text_len);
+        m->selection_cursor = moth_clamp_int(undo->selection_cursor_before, 0, m->text_len);
+        m->cursor = moth_clamp_int(m->selection_cursor, 0, m->text_len);
+    }
+    else
+    {
+        m->cursor = moth_clamp_int(undo->cursor_before, 0, m->text_len);
+        moth_clear_selection(m);
+    }
+
+    m->preferred_col = moth_cursor_col(m);
+    m->dirty = undo->dirty_before;
 }
 
 static void moth_push_undo(Mothpad *m, MothUndoRecord record)
 {
     if(!m) return;
+    record.group = m->undo_group;
     if(m->undo_count >= MOTH_MAX_UNDO)
     {
         memmove(m->undo,
@@ -74,6 +204,26 @@ static void moth_push_undo(Mothpad *m, MothUndoRecord record)
         m->undo_count = MOTH_MAX_UNDO - 1;
     }
     m->undo[m->undo_count++] = record;
+}
+
+void moth_begin_undo_group(Mothpad *m)
+{
+    if(!m) return;
+    if(m->undo_group)
+    {
+        ++m->undo_group_depth;
+        return;
+    }
+    m->undo_group = m->next_undo_group++;
+    m->undo_group_depth = 1;
+    if(m->next_undo_group <= 0) m->next_undo_group = 1;
+}
+
+void moth_end_undo_group(Mothpad *m)
+{
+    if(!m) return;
+    if(m->undo_group_depth > 0) --m->undo_group_depth;
+    if(m->undo_group_depth == 0) m->undo_group = 0;
 }
 
 static MothStatus moth_raw_insert_char(Mothpad *m, int pos, char ch)
@@ -132,10 +282,80 @@ static void moth_set_cursor_line_col(Mothpad *m, int line, int col)
     m->cursor = moth_pos_from_line_col(m, line, col);
 }
 
+static int moth_visual_rows_for_line_len(int line_len)
+{
+    if(line_len < 0) line_len = 0;
+    return (line_len / MOTH_COLS) + 1;
+}
+
+static int moth_visual_line_from_logical(const Mothpad *m, int logical_line, int col)
+{
+    int visual = 0;
+    if(!m || m->line_count <= 0) return 0;
+    logical_line = moth_clamp_int(logical_line, 0, m->line_count - 1);
+
+    for(int i = 0; i < logical_line; ++i)
+    {
+        int line_len = m->lines[i].end - m->lines[i].start;
+        visual += moth_visual_rows_for_line_len(line_len);
+    }
+
+    if(col < 0) col = 0;
+    visual += col / MOTH_COLS;
+    return visual;
+}
+
+static void moth_logical_from_visual_line(const Mothpad *m, int visual, int *out_line, int *out_wrap)
+{
+    int line = 0;
+    int wrap = 0;
+    if(!m || m->line_count <= 0)
+    {
+        if(out_line) *out_line = 0;
+        if(out_wrap) *out_wrap = 0;
+        return;
+    }
+
+    if(visual < 0) visual = 0;
+    for(line = 0; line < m->line_count; ++line)
+    {
+        int line_len = m->lines[line].end - m->lines[line].start;
+        int rows = moth_visual_rows_for_line_len(line_len);
+        if(visual < rows)
+        {
+            wrap = visual;
+            break;
+        }
+        visual -= rows;
+    }
+
+    if(line >= m->line_count)
+    {
+        line = m->line_count - 1;
+        wrap = moth_visual_rows_for_line_len(m->lines[line].end - m->lines[line].start) - 1;
+    }
+
+    if(out_line) *out_line = line;
+    if(out_wrap) *out_wrap = wrap;
+}
+
 static void moth_follow_cursor(Mothpad *m)
 {
     int line = moth_cursor_line(m);
     int col = moth_cursor_col(m);
+
+    if(m->soft_wrap)
+    {
+        int visual_line = moth_visual_line_from_logical(m, line, col);
+        if(visual_line < m->scroll_line) m->scroll_line = visual_line;
+        if(visual_line >= m->scroll_line + MOTH_TEXT_ROWS)
+        {
+            m->scroll_line = visual_line - MOTH_TEXT_ROWS + 1;
+        }
+        m->scroll_col = 0;
+        if(m->scroll_line < 0) m->scroll_line = 0;
+        return;
+    }
 
     if(line < m->scroll_line) m->scroll_line = line;
     if(line >= m->scroll_line + MOTH_TEXT_ROWS)
@@ -209,6 +429,7 @@ void moth_init(Mothpad *m)
     if(!m) return;
     memset(m, 0, sizeof(*m));
     m->mode = MOTH_MODE_EDITING;
+    moth_clear_undo(m);
     moth_rebuild_lines(m);
     moth_clear_cells(m);
 }
@@ -228,6 +449,7 @@ MothStatus moth_set_text(Mothpad *m, const char *text)
     m->scroll_col = 0;
     m->dirty = 0;
     moth_clear_undo(m);
+    moth_clear_selection(m);
 
     if(!moth_rebuild_lines(m)) return MOTH_ERR_LINE_LIMIT;
     return MOTH_OK;
@@ -256,13 +478,14 @@ MothStatus moth_load_file(Mothpad *m, const char *path)
     m->scroll_col = 0;
     m->dirty = 0;
     moth_clear_undo(m);
+    moth_clear_selection(m);
     moth_copy_path(m->path, sizeof(m->path), path);
 
     if(!moth_rebuild_lines(m)) return MOTH_ERR_LINE_LIMIT;
     return MOTH_OK;
 }
 
-MothStatus moth_save_file(Mothpad *m, const char *path)
+MothStatus moth_save_file_with_backup(Mothpad *m, const char *path, int keep_backup)
 {
     char temp_path[320];
     char bak_path[320];
@@ -285,12 +508,20 @@ MothStatus moth_save_file(Mothpad *m, const char *path)
         return MOTH_ERR_IO;
     }
 
-    remove(bak_path);
-    rename(path, bak_path);
+    if(keep_backup)
+    {
+        remove(bak_path);
+        rename(path, bak_path);
+    }
+    else
+    {
+        remove(path);
+        remove(bak_path);
+    }
 
     if(rename(temp_path, path) != 0)
     {
-        rename(bak_path, path);
+        if(keep_backup) rename(bak_path, path);
         remove(temp_path);
         return MOTH_ERR_IO;
     }
@@ -298,6 +529,43 @@ MothStatus moth_save_file(Mothpad *m, const char *path)
     moth_copy_path(m->path, sizeof(m->path), path);
     m->dirty = 0;
     moth_clear_undo(m);
+    moth_clear_selection(m);
+    return MOTH_OK;
+}
+
+MothStatus moth_save_file(Mothpad *m, const char *path)
+{
+    return moth_save_file_with_backup(m, path, 1);
+}
+
+MothStatus moth_write_recovery_file(const Mothpad *m, const char *path)
+{
+    char temp_path[320];
+
+    if(!m || !path || !path[0]) return MOTH_ERR_BAD_ARGUMENT;
+    if(snprintf(temp_path, sizeof(temp_path), "%s.tmp", path) >= (int)sizeof(temp_path))
+    {
+        return MOTH_ERR_FULL;
+    }
+
+    FILE *file = fopen(temp_path, "wb");
+    if(!file) return MOTH_ERR_IO;
+
+    size_t wrote = fwrite(m->text, 1, (size_t)m->text_len, file);
+    int close_failed = fclose(file);
+    if(wrote != (size_t)m->text_len || close_failed)
+    {
+        remove(temp_path);
+        return MOTH_ERR_IO;
+    }
+
+    remove(path);
+    if(rename(temp_path, path) != 0)
+    {
+        remove(temp_path);
+        return MOTH_ERR_IO;
+    }
+
     return MOTH_OK;
 }
 #endif
@@ -306,22 +574,35 @@ MothStatus moth_insert_char(Mothpad *m, char ch)
 {
     MothUndoRecord undo;
     int pos;
+    int replace_selection;
 
     if(!m) return MOTH_ERR_BAD_ARGUMENT;
+    memset(&undo, 0, sizeof(undo));
+    moth_capture_undo_before(m, &undo);
+    replace_selection = moth_has_selection(m);
+    if(replace_selection)
+    {
+        moth_begin_undo_group(m);
+        moth_delete_selection(m);
+    }
     pos = m->cursor;
     undo.kind = MOTH_UNDO_DELETE_CHAR;
     undo.pos = pos;
     undo.ch = ch;
-    undo.cursor_before = m->cursor;
-    undo.dirty_before = m->dirty;
 
     MothStatus status = moth_raw_insert_char(m, pos, ch);
-    if(status != MOTH_OK) return status;
+    if(status != MOTH_OK)
+    {
+        if(replace_selection) moth_end_undo_group(m);
+        return status;
+    }
 
     ++m->cursor;
     m->preferred_col = moth_cursor_col(m);
     m->dirty = 1;
+    moth_clear_selection(m);
     moth_push_undo(m, undo);
+    if(replace_selection) moth_end_undo_group(m);
     return MOTH_OK;
 }
 
@@ -330,11 +611,17 @@ MothStatus moth_insert_text(Mothpad *m, const char *text)
     if(!m) return MOTH_ERR_BAD_ARGUMENT;
     if(!text) return MOTH_OK;
 
+    moth_begin_undo_group(m);
     for(int i = 0; text[i]; ++i)
     {
         MothStatus status = moth_insert_char(m, text[i]);
-        if(status != MOTH_OK) return status;
+        if(status != MOTH_OK)
+        {
+            moth_end_undo_group(m);
+            return status;
+        }
     }
+    moth_end_undo_group(m);
     return MOTH_OK;
 }
 
@@ -362,74 +649,128 @@ MothStatus moth_join_path(char *dest, size_t dest_size, const char *dir, const c
 MothStatus moth_undo(Mothpad *m)
 {
     MothUndoRecord undo;
+    MothUndoRecord restore;
     MothStatus status;
+    int group;
 
     if(!m) return MOTH_ERR_BAD_ARGUMENT;
     if(m->undo_count <= 0) return MOTH_OK;
+    moth_clear_selection(m);
 
-    undo = m->undo[--m->undo_count];
-    if(undo.kind == MOTH_UNDO_INSERT_CHAR)
-    {
-        status = moth_raw_insert_char(m, undo.pos, undo.ch);
-        if(status != MOTH_OK)
-        {
-            moth_push_undo(m, undo);
-            return status;
-        }
-    }
-    else if(undo.kind == MOTH_UNDO_DELETE_CHAR)
-    {
-        status = moth_raw_delete_char(m, undo.pos);
-        if(status != MOTH_OK)
-        {
-            moth_push_undo(m, undo);
-            return status;
-        }
-    }
-    else
-    {
-        return MOTH_OK;
-    }
+    undo = m->undo[m->undo_count - 1];
+    group = undo.group;
+    restore = undo;
 
-    m->cursor = moth_clamp_int(undo.cursor_before, 0, m->text_len);
-    m->preferred_col = moth_cursor_col(m);
-    m->dirty = undo.dirty_before;
+    do
+    {
+        undo = m->undo[--m->undo_count];
+        restore = undo;
+
+        if(undo.kind == MOTH_UNDO_INSERT_CHAR)
+        {
+            status = moth_raw_insert_char(m, undo.pos, undo.ch);
+            if(status != MOTH_OK)
+            {
+                moth_push_undo(m, undo);
+                return status;
+            }
+        }
+        else if(undo.kind == MOTH_UNDO_DELETE_CHAR)
+        {
+            status = moth_raw_delete_char(m, undo.pos);
+            if(status != MOTH_OK)
+            {
+                moth_push_undo(m, undo);
+                return status;
+            }
+        }
+        else
+        {
+            return MOTH_OK;
+        }
+    } while(group && m->undo_count > 0 && m->undo[m->undo_count - 1].group == group);
+
+    moth_restore_undo_before(m, &restore);
     return MOTH_OK;
+}
+
+void moth_delete_selection(Mothpad *m)
+{
+    MothUndoRecord undo;
+    int start;
+    int end;
+    int len;
+
+    if(!m || !moth_has_selection(m)) return;
+    memset(&undo, 0, sizeof(undo));
+    moth_capture_undo_before(m, &undo);
+    moth_selection_bounds(m, &start, &end);
+    len = end - start;
+    moth_clear_selection(m);
+    m->cursor = start;
+    moth_begin_undo_group(m);
+    for(int i = 0; i < len; ++i)
+    {
+        MothUndoRecord item = undo;
+        item.kind = MOTH_UNDO_INSERT_CHAR;
+        item.pos = start;
+        item.ch = m->text[start];
+        if(moth_raw_delete_char(m, start) != MOTH_OK) break;
+        m->dirty = 1;
+        moth_push_undo(m, item);
+    }
+    moth_end_undo_group(m);
+    m->cursor = start;
+    m->preferred_col = moth_cursor_col(m);
 }
 
 void moth_backspace(Mothpad *m)
 {
     MothUndoRecord undo;
-    if(!m || m->cursor <= 0) return;
+    if(!m) return;
+    if(moth_has_selection(m))
+    {
+        moth_delete_selection(m);
+        return;
+    }
+    if(m->cursor <= 0) return;
 
+    memset(&undo, 0, sizeof(undo));
     undo.kind = MOTH_UNDO_INSERT_CHAR;
     undo.pos = m->cursor - 1;
     undo.ch = m->text[m->cursor - 1];
-    undo.cursor_before = m->cursor;
-    undo.dirty_before = m->dirty;
+    moth_capture_undo_before(m, &undo);
 
     if(moth_raw_delete_char(m, m->cursor - 1) != MOTH_OK) return;
 
     --m->cursor;
     m->preferred_col = moth_cursor_col(m);
     m->dirty = 1;
+    moth_clear_selection(m);
     moth_push_undo(m, undo);
 }
 
 void moth_delete(Mothpad *m)
 {
     MothUndoRecord undo;
-    if(!m || m->cursor >= m->text_len) return;
+    if(!m) return;
+    if(moth_has_selection(m))
+    {
+        moth_delete_selection(m);
+        return;
+    }
+    if(m->cursor >= m->text_len) return;
 
+    memset(&undo, 0, sizeof(undo));
     undo.kind = MOTH_UNDO_INSERT_CHAR;
     undo.pos = m->cursor;
     undo.ch = m->text[m->cursor];
-    undo.cursor_before = m->cursor;
-    undo.dirty_before = m->dirty;
+    moth_capture_undo_before(m, &undo);
 
     if(moth_raw_delete_char(m, m->cursor) != MOTH_OK) return;
 
     m->dirty = 1;
+    moth_clear_selection(m);
     moth_push_undo(m, undo);
 }
 
@@ -505,6 +846,10 @@ int moth_find_next(const Mothpad *m, const char *needle, int from_cursor)
 void moth_render(Mothpad *m)
 {
     if(!m) return;
+    int selection_start = 0;
+    int selection_end = 0;
+    int has_selection = moth_has_selection(m);
+    if(has_selection) moth_selection_bounds(m, &selection_start, &selection_end);
 
     moth_follow_cursor(m);
     moth_clear_cells(m);
@@ -512,25 +857,40 @@ void moth_render(Mothpad *m)
     moth_fill_row(m, MOTH_BOTTOM_ROW, MOTH_COLOR_STATUS_FG, MOTH_COLOR_STATUS_BG, MOTH_CELL_STATUS);
 
     char top[96];
-    snprintf(top, sizeof(top), "%s%s", moth_display_path(m), m->dirty ? "  MOD" : "");
+    snprintf(top, sizeof(top), "%s%s", moth_display_path(m), m->dirty ? "  *" : "");
     moth_draw_text(m, 0, MOTH_TOP_ROW, top, MOTH_COLOR_STATUS_FG, MOTH_COLOR_STATUS_BG, MOTH_CELL_STATUS);
 
     for(int row = 0; row < MOTH_TEXT_ROWS; ++row)
     {
         int line_index = m->scroll_line + row;
-        if(line_index >= m->line_count) break;
+        int wrap_index = 0;
+        int line_start_col = m->scroll_col;
+        if(m->soft_wrap)
+        {
+            moth_logical_from_visual_line(m, m->scroll_line + row, &line_index, &wrap_index);
+            line_start_col = wrap_index * MOTH_COLS;
+        }
+        else if(line_index >= m->line_count) break;
 
         MothLine line = m->lines[line_index];
         int line_len = line.end - line.start;
-        int visible = line_len - m->scroll_col;
+        int visible = line_len - line_start_col;
         if(visible <= 0) continue;
         visible = moth_min_int(visible, MOTH_COLS);
 
         for(int col = 0; col < visible; ++col)
         {
-            char ch = m->text[line.start + m->scroll_col + col];
+            int pos = line.start + line_start_col + col;
+            char ch = m->text[line.start + line_start_col + col];
             if(ch == '\t') ch = ' ';
-            moth_put_cell(m, col, MOTH_TEXT_FIRST_ROW + row, (uint8_t)ch, MOTH_COLOR_TEXT, MOTH_COLOR_BACK, 0);
+            if(has_selection && pos >= selection_start && pos < selection_end)
+            {
+                moth_put_cell(m, col, MOTH_TEXT_FIRST_ROW + row, (uint8_t)ch, MOTH_COLOR_BACK, MOTH_COLOR_TEXT, MOTH_CELL_SELECTION);
+            }
+            else
+            {
+                moth_put_cell(m, col, MOTH_TEXT_FIRST_ROW + row, (uint8_t)ch, MOTH_COLOR_TEXT, MOTH_COLOR_BACK, 0);
+            }
         }
     }
 
@@ -538,8 +898,18 @@ void moth_render(Mothpad *m)
     snprintf(bottom, sizeof(bottom), "Ln %02d Col %02d", moth_cursor_line(m) + 1, moth_cursor_col(m) + 1);
     moth_draw_text(m, 0, MOTH_BOTTOM_ROW, bottom, MOTH_COLOR_STATUS_FG, MOTH_COLOR_STATUS_BG, MOTH_CELL_STATUS);
 
-    int cursor_y = MOTH_TEXT_FIRST_ROW + moth_cursor_line(m) - m->scroll_line;
-    int cursor_x = moth_cursor_col(m) - m->scroll_col;
+    int cursor_y;
+    int cursor_x;
+    if(m->soft_wrap)
+    {
+        cursor_y = MOTH_TEXT_FIRST_ROW + moth_visual_line_from_logical(m, moth_cursor_line(m), moth_cursor_col(m)) - m->scroll_line;
+        cursor_x = moth_cursor_col(m) % MOTH_COLS;
+    }
+    else
+    {
+        cursor_y = MOTH_TEXT_FIRST_ROW + moth_cursor_line(m) - m->scroll_line;
+        cursor_x = moth_cursor_col(m) - m->scroll_col;
+    }
     MothCell *cursor = moth_mut_cell_at(m, cursor_x, cursor_y);
     if(cursor)
     {

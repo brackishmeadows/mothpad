@@ -20,10 +20,24 @@
 #define KBD_SDA_PIN   6
 #define KBD_SCL_PIN   7
 #define KBD_ADDR      0x1f
+#define KBD_I2C_BAUD  100000
+#define KBD_REG_SETTLE_US 250
+#define KBD_REG_CFG   0x02
 #define KBD_REG_KEY   0x09
 #define KBD_REG_BAT   0x0b
+#define KBD_REG_MATRIX 0x0c
+#define KBD_REG_JOYSTICK 0x0d
+#define KBD_CFG_OVERFLOW_INT (1u << 1)
+#define KBD_CFG_KEY_INT      (1u << 4)
+#define KBD_CFG_REPORT_MODS (1u << 6)
+#define KBD_CFG_USE_MODS    (1u << 7)
 #define KBD_CTRL_1    0x7e
 #define KBD_CTRL_2    0xa5
+#define KBD_SHIFT_L   0xa2
+#define KBD_SHIFT_R   0xa3
+#define KBD_MATRIX_SHIFT_L 2
+#define KBD_MATRIX_SHIFT_R 3
+#define KBD_MATRIX_SHIFT_MASK 0x80
 
 #define GLYPH_WIDTH   5
 #define GLYPH_HEIGHT  7
@@ -37,6 +51,7 @@ static int g_lcd_bg = PICOCALC_COLOR_BLACK;
 static int g_color_order = PICOCALC_COLOR_ORDER_RGB;
 static int g_pixel_bits = 18;
 static int g_ctrl_held;
+static int g_shift_held;
 
 static void lcd_select(void)
 {
@@ -183,6 +198,41 @@ static void lcd_fill_rect(int x, int y, int w, int h, int color)
     for(int yy = 0; yy < h; ++yy)
     {
         spi_write_blocking(LCD_SPI, row, (size_t)(w * pixel_bytes));
+    }
+    lcd_spi_finish();
+    lcd_deselect();
+}
+
+void picocalc_lcd_draw_mono_bitmap(const uint8_t *bits, int width, int height, int stride, int fg, int bg)
+{
+    uint8_t row[PICOCALC_LCD_WIDTH * 3];
+    uint8_t fg_bytes[3];
+    uint8_t bg_bytes[3];
+    int pixel_bytes;
+
+    if(!bits || width <= 0 || height <= 0 || stride <= 0) return;
+    if(width > PICOCALC_LCD_WIDTH) width = PICOCALC_LCD_WIDTH;
+    if(height > PICOCALC_LCD_HEIGHT) height = PICOCALC_LCD_HEIGHT;
+
+    pixel_bytes = lcd_color_bytes(fg, fg_bytes);
+    (void)lcd_color_bytes(bg, bg_bytes);
+
+    lcd_set_window(0, 0, width, height);
+    gpio_put(LCD_DC_PIN, 1);
+    lcd_select();
+    for(int y = 0; y < height; ++y)
+    {
+        const uint8_t *src = bits + y * stride;
+        for(int x = 0; x < width; ++x)
+        {
+            int lit = (src[x >> 3] & (1 << (7 - (x & 7)))) != 0;
+            const uint8_t *color = lit ? fg_bytes : bg_bytes;
+            uint8_t *dst = &row[x * pixel_bytes];
+            dst[0] = color[0];
+            dst[1] = color[1];
+            if(pixel_bytes == 3) dst[2] = color[2];
+        }
+        spi_write_blocking(LCD_SPI, row, (size_t)(width * pixel_bytes));
     }
     lcd_spi_finish();
     lcd_deselect();
@@ -410,6 +460,15 @@ static const uint8_t *glyph8x12(unsigned char code)
     static const uint8_t bat_r50[CELL_HEIGHT] = {0, 0, 252, 2, 194, 194, 194, 194, 194, 2, 252, 0};
     static const uint8_t bat_r100[CELL_HEIGHT] = {0, 0, 252, 2, 218, 218, 218, 218, 218, 2, 252, 0};
     static const uint8_t bat_charge[CELL_HEIGHT] = {0, 0, 12, 24, 48, 96, 126, 6, 12, 24, 0, 0};
+    static const uint8_t checkmark[CELL_HEIGHT] = {0, 0, 0, 1, 3, 70, 108, 56, 16, 0, 0, 0};
+    static const uint8_t checkbox_off[CELL_HEIGHT] = {0, 0, 127, 65, 65, 65, 65, 65, 65, 127, 0, 0};
+    static const uint8_t checkbox_on[CELL_HEIGHT] = {0, 0, 124, 65, 3, 70, 108, 57, 17, 71, 0, 0};
+    static const uint8_t radio_off[CELL_HEIGHT] = {0, 0, 0, 28, 34, 65, 65, 65, 34, 28, 0, 0};
+    static const uint8_t radio_on[CELL_HEIGHT] = {0, 0, 0, 28, 34, 93, 93, 93, 34, 28, 0, 0};
+    static const uint8_t arrow_left[CELL_HEIGHT] = {0, 0, 0, 32, 48, 56, 60, 56, 48, 32, 0, 0};
+    static const uint8_t moth_l[CELL_HEIGHT] = {0, 63, 49, 44, 61, 48, 32, 44, 32, 49, 63, 0};
+    static const uint8_t moth_r[CELL_HEIGHT] = {0, 254, 198, 154, 94, 6, 2, 26, 2, 70, 254, 0};
+    static const uint8_t solid[CELL_HEIGHT] = {255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255};
 
     switch(code)
     {
@@ -428,6 +487,15 @@ static const uint8_t *glyph8x12(unsigned char code)
         case 0x8c: return bat_r50;
         case 0x8d: return bat_r100;
         case 0x8e: return bat_charge;
+        case 0x8f: return checkmark;
+        case 0x90: return checkbox_off;
+        case 0x91: return checkbox_on;
+        case 0x92: return radio_off;
+        case 0x93: return radio_on;
+        case 0x94: return arrow_left;
+        case 0x95: return moth_l;
+        case 0x96: return moth_r;
+        case 0x97: return solid;
         default: return NULL;
     }
 }
@@ -650,12 +718,20 @@ void picocalc_lcd_put_char(char ch, int flush)
 
 void picocalc_kbd_init(void)
 {
-    i2c_init(KBD_I2C, 10000);
+    i2c_init(KBD_I2C, KBD_I2C_BAUD);
     gpio_set_function(KBD_SDA_PIN, GPIO_FUNC_I2C);
     gpio_set_function(KBD_SCL_PIN, GPIO_FUNC_I2C);
     gpio_pull_up(KBD_SDA_PIN);
     gpio_pull_up(KBD_SCL_PIN);
     g_ctrl_held = 0;
+    g_shift_held = 0;
+
+    uint8_t msg[2] = {
+        (uint8_t)(KBD_REG_CFG | 0x80),
+        (uint8_t)(KBD_CFG_OVERFLOW_INT | KBD_CFG_KEY_INT | KBD_CFG_REPORT_MODS | KBD_CFG_USE_MODS),
+    };
+    (void)i2c_write_blocking(KBD_I2C, KBD_ADDR, msg, 2, false);
+    sleep_ms(2);
 }
 
 int picocalc_kbd_read_raw(uint16_t *out)
@@ -664,17 +740,62 @@ int picocalc_kbd_read_raw(uint16_t *out)
     uint16_t data = 0;
 
     if(i2c_write_blocking(KBD_I2C, KBD_ADDR, &reg, 1, true) != 1) return -1;
-    sleep_ms(16);
+    sleep_us(KBD_REG_SETTLE_US);
     if(i2c_read_blocking(KBD_I2C, KBD_ADDR, (uint8_t *)&data, 2, false) != 2) return -1;
     if(out) *out = data;
     return 0;
 }
 
-int picocalc_kbd_read(void)
+int picocalc_kbd_read_matrix(uint8_t *out, size_t out_size)
+{
+    uint8_t reg = KBD_REG_MATRIX;
+    uint8_t data[10] = {0};
+
+    if(!out || out_size < 9) return -1;
+    if(i2c_write_blocking(KBD_I2C, KBD_ADDR, &reg, 1, true) != 1) return -1;
+    sleep_us(KBD_REG_SETTLE_US);
+    if(i2c_read_blocking(KBD_I2C, KBD_ADDR, data, sizeof(data), false) != (int)sizeof(data)) return -1;
+    memcpy(out, data + 1, 9);
+    return 0;
+}
+
+int picocalc_kbd_read_joystick(uint8_t *out)
+{
+    uint8_t reg = KBD_REG_JOYSTICK;
+    uint8_t data[2] = {0};
+
+    if(!out) return -1;
+    if(i2c_write_blocking(KBD_I2C, KBD_ADDR, &reg, 1, true) != 1) return -1;
+    sleep_us(KBD_REG_SETTLE_US);
+    if(i2c_read_blocking(KBD_I2C, KBD_ADDR, data, sizeof(data), false) != (int)sizeof(data)) return -1;
+    *out = data[1];
+    return 0;
+}
+
+static int picocalc_kbd_poll_shift_matrix(void)
+{
+    uint8_t matrix[9] = {0};
+
+    if(picocalc_kbd_read_matrix(matrix, sizeof(matrix)) != 0) return g_shift_held;
+
+    g_shift_held = ((matrix[KBD_MATRIX_SHIFT_L] & KBD_MATRIX_SHIFT_MASK) == 0) ||
+                   ((matrix[KBD_MATRIX_SHIFT_R] & KBD_MATRIX_SHIFT_MASK) == 0);
+    return g_shift_held;
+}
+
+int picocalc_kbd_shift_down(void)
+{
+    return picocalc_kbd_poll_shift_matrix();
+}
+
+int picocalc_kbd_read_event(int *out_key, int *out_shift)
 {
     uint16_t data = 0;
     int key;
     int state;
+
+    if(out_key) *out_key = -1;
+    if(out_shift) *out_shift = g_shift_held;
 
     if(picocalc_kbd_read_raw(&data) != 0) return -1;
     if(data == 0) return -1;
@@ -689,14 +810,33 @@ int picocalc_kbd_read(void)
         return -1;
     }
 
+    if(key == KBD_SHIFT_L || key == KBD_SHIFT_R)
+    {
+        if(state == 1 || state == 2) g_shift_held = 1;
+        if(state == 3) g_shift_held = 0;
+        if(out_shift) *out_shift = g_shift_held;
+        return -1;
+    }
+
     if(state != 1 && state != 2) return -1;
 
     if(g_ctrl_held)
     {
-        if(key >= 'a' && key <= 'z') return key - 'a' + 1;
-        if(key >= 'A' && key <= 'Z') return key - 'A' + 1;
+        if(key >= 'a' && key <= 'z') key = key - 'a' + 1;
+        else if(key >= 'A' && key <= 'Z') key = key - 'A' + 1;
     }
 
+    if(out_key) *out_key = key;
+    if(out_shift) *out_shift = g_shift_held;
+    return 0;
+}
+
+int picocalc_kbd_read(void)
+{
+    int key = -1;
+    int shift = 0;
+    if(picocalc_kbd_read_event(&key, &shift) != 0) return -1;
+    (void)shift;
     return key;
 }
 
@@ -707,7 +847,7 @@ int picocalc_kbd_read_battery(int *percent, int *charging)
     int raw;
 
     if(i2c_write_blocking(KBD_I2C, KBD_ADDR, &reg, 1, true) != 1) return -1;
-    sleep_ms(16);
+    sleep_us(KBD_REG_SETTLE_US);
     if(i2c_read_blocking(KBD_I2C, KBD_ADDR, (uint8_t *)&data, 2, false) != 2) return -1;
     if(data == 0) return -1;
 

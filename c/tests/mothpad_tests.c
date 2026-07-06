@@ -100,6 +100,98 @@ static void test_undo_backspace_and_delete(void)
     CHECK(m.cursor == 1);
 }
 
+static void test_undo_groups_text_operations(void)
+{
+    Mothpad m;
+    int start = 0;
+    int end = 0;
+    moth_init(&m);
+    CHECK(moth_set_text(&m, "ab") == MOTH_OK);
+    m.cursor = 1;
+
+    CHECK(moth_insert_text(&m, "XYZ") == MOTH_OK);
+    CHECK(strcmp(m.text, "aXYZb") == 0);
+    CHECK(m.cursor == 4);
+
+    CHECK(moth_undo(&m) == MOTH_OK);
+    CHECK(strcmp(m.text, "ab") == 0);
+    CHECK(m.cursor == 1);
+    CHECK(m.dirty == 0);
+
+    moth_select_range(&m, 0, 2);
+    moth_delete_selection(&m);
+    CHECK(strcmp(m.text, "") == 0);
+
+    CHECK(moth_undo(&m) == MOTH_OK);
+    CHECK(strcmp(m.text, "ab") == 0);
+    CHECK(moth_has_selection(&m));
+    moth_selection_bounds(&m, &start, &end);
+    CHECK(start == 0);
+    CHECK(end == 2);
+    CHECK(m.cursor == 2);
+}
+
+static void test_undo_replace_selection_restores_selection(void)
+{
+    Mothpad m;
+    int start = 0;
+    int end = 0;
+
+    moth_init(&m);
+    CHECK(moth_set_text(&m, "abcdef") == MOTH_OK);
+    moth_select_range(&m, 1, 4);
+
+    CHECK(moth_insert_char(&m, 'X') == MOTH_OK);
+    CHECK(strcmp(m.text, "aXef") == 0);
+    CHECK(!moth_has_selection(&m));
+
+    CHECK(moth_undo(&m) == MOTH_OK);
+    CHECK(strcmp(m.text, "abcdef") == 0);
+    CHECK(moth_has_selection(&m));
+    moth_selection_bounds(&m, &start, &end);
+    CHECK(start == 1);
+    CHECK(end == 4);
+    CHECK(m.cursor == 4);
+}
+
+static void test_selection_copy_delete_and_render(void)
+{
+    Mothpad m;
+    char clip[16];
+    int clip_len = 0;
+    const MothCell *cell;
+
+    moth_init(&m);
+    CHECK(moth_set_text(&m, "abcdef") == MOTH_OK);
+    m.cursor = 1;
+    moth_begin_selection(&m);
+    m.cursor = 4;
+    moth_update_selection(&m);
+
+    CHECK(moth_has_selection(&m));
+    CHECK(moth_copy_selection(&m, clip, sizeof(clip), &clip_len) == MOTH_OK);
+    CHECK(strcmp(clip, "bcd") == 0);
+    CHECK(clip_len == 3);
+
+    moth_render(&m);
+    cell = moth_cell_at(&m, 1, MOTH_TEXT_FIRST_ROW);
+    CHECK(cell && cell->ch == 'b' && (cell->flags & MOTH_CELL_SELECTION));
+    CHECK(cell && cell->fg == 0 && cell->bg == 7);
+
+    moth_delete_selection(&m);
+    CHECK(strcmp(m.text, "aef") == 0);
+    CHECK(m.cursor == 1);
+    CHECK(!moth_has_selection(&m));
+
+    moth_select_all(&m);
+    CHECK(moth_has_selection(&m));
+    CHECK(moth_copy_selection(&m, clip, sizeof(clip), &clip_len) == MOTH_OK);
+    CHECK(strcmp(clip, "aef") == 0);
+
+    moth_select_range(&m, 1, 1);
+    CHECK(!moth_has_selection(&m));
+}
+
 static void test_tab_is_one_character(void)
 {
     Mothpad m;
@@ -219,6 +311,97 @@ static void test_safe_save_load(void)
     remove(tmp_path);
 }
 
+static void test_save_without_backup(void)
+{
+    Mothpad m;
+    FILE *bak;
+    char path[512];
+    char bak_path[512];
+    char tmp_path[512];
+
+    test_temp_path(path, sizeof(path), "mothpad_test_no_backup.txt");
+    test_temp_path(bak_path, sizeof(bak_path), "mothpad_test_no_backup.txt.bak");
+    test_temp_path(tmp_path, sizeof(tmp_path), "mothpad_test_no_backup.txt.tmp");
+
+    remove(path);
+    remove(bak_path);
+    remove(tmp_path);
+
+    moth_init(&m);
+    CHECK(moth_set_text(&m, "first\n") == MOTH_OK);
+    CHECK(moth_save_file_with_backup(&m, path, 1) == MOTH_OK);
+    CHECK(moth_set_text(&m, "second\n") == MOTH_OK);
+    CHECK(moth_save_file_with_backup(&m, path, 1) == MOTH_OK);
+    bak = fopen(bak_path, "rb");
+    CHECK(bak != NULL);
+    if(bak) fclose(bak);
+
+    CHECK(moth_set_text(&m, "third\n") == MOTH_OK);
+    CHECK(moth_save_file_with_backup(&m, path, 0) == MOTH_OK);
+    bak = fopen(bak_path, "rb");
+    CHECK(bak == NULL);
+    if(bak) fclose(bak);
+
+    remove(path);
+    remove(bak_path);
+    remove(tmp_path);
+}
+
+static void test_soft_wrap_rendering(void)
+{
+    Mothpad m;
+
+    moth_init(&m);
+    CHECK(moth_set_text(&m, "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ") == MOTH_OK);
+    m.soft_wrap = 1;
+    moth_render(&m);
+
+    CHECK(moth_cell_at(&m, 0, MOTH_TEXT_FIRST_ROW)->ch == 'a');
+    CHECK(moth_cell_at(&m, 39, MOTH_TEXT_FIRST_ROW)->ch == 'N');
+    CHECK(moth_cell_at(&m, 0, MOTH_TEXT_FIRST_ROW + 1)->ch == 'O');
+}
+
+static void test_recovery_file_does_not_mark_clean_or_clear_undo(void)
+{
+    Mothpad m;
+    Mothpad loaded;
+    char path[512];
+    char recovery_path[512];
+    char recovery_tmp_path[600];
+
+    test_temp_path(path, sizeof(path), "mothpad_test_recovery.txt");
+    test_temp_path(recovery_path, sizeof(recovery_path), "mothpad_recovery.txt");
+    snprintf(recovery_tmp_path, sizeof(recovery_tmp_path), "%s.tmp", recovery_path);
+
+    remove(path);
+    remove(recovery_path);
+    remove(recovery_tmp_path);
+
+    moth_init(&m);
+    CHECK(moth_set_text(&m, "base\n") == MOTH_OK);
+    CHECK(moth_save_file(&m, path) == MOTH_OK);
+
+    m.cursor = 0;
+    CHECK(moth_insert_text(&m, "draft\n") == MOTH_OK);
+    CHECK(m.dirty == 1);
+    CHECK(m.undo_count > 0);
+
+    CHECK(moth_write_recovery_file(&m, recovery_path) == MOTH_OK);
+    CHECK(m.dirty == 1);
+    CHECK(m.undo_count > 0);
+
+    moth_init(&loaded);
+    CHECK(moth_load_file(&loaded, recovery_path) == MOTH_OK);
+    CHECK(strcmp(loaded.text, "draft\nbase\n") == 0);
+
+    CHECK(moth_undo(&m) == MOTH_OK);
+    CHECK(strcmp(m.text, "base\n") == 0);
+
+    remove(path);
+    remove(recovery_path);
+    remove(recovery_tmp_path);
+}
+
 int main(void)
 {
     test_insert_and_lines();
@@ -226,12 +409,18 @@ int main(void)
     test_delete_joins_lines();
     test_undo_insert_restores_clean_text();
     test_undo_backspace_and_delete();
+    test_undo_groups_text_operations();
+    test_undo_replace_selection_restores_selection();
+    test_selection_copy_delete_and_render();
     test_tab_is_one_character();
     test_join_path();
     test_vertical_movement_clamps_column();
     test_find_wraps();
     test_render_status_and_cursor();
     test_safe_save_load();
+    test_save_without_backup();
+    test_soft_wrap_rendering();
+    test_recovery_file_does_not_mark_clean_or_clear_undo();
 
     if(failures)
     {

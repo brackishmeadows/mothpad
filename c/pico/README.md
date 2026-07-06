@@ -68,6 +68,19 @@ Or use the wrapper:
 powershell -ExecutionPolicy Bypass -File .\picocalc\mothpad\c\pico\build-pico.ps1 -Board pico2_w
 ```
 
+From the Field Office root, the currently verified explicit build command is:
+
+```powershell
+$env:PICO_SDK_PATH = (Resolve-Path 'picocalc\toolchains\pico-sdk').Path
+powershell -ExecutionPolicy Bypass -File .\picocalc\mothpad\c\pico\build-pico.ps1 -Board pico2_w -BuildDir .\picocalc\mothpad\c\pico\build-pico2_w_mothpad
+```
+
+That writes the tested UF2 to:
+
+```text
+picocalc\mothpad\c\pico\build-pico2_w_mothpad\mothpad_pico.uf2
+```
+
 ## Current Behavior
 
 The clean target is `mothpad_pico`. It initializes the Mothpad core, renders
@@ -78,6 +91,8 @@ diffed at the cell level instead of clearing the whole screen. It mounts the SD
 card at `/` through `pico-vfs` and does not format the card on mount failure.
 The top status row also shows the keyboard controller's battery percent when
 available.
+On boot, the clean target shows the embedded `mothpad-splash.png` artwork for
+about half a second before clearing into the editor or recovery prompt.
 
 Build outputs:
 
@@ -103,7 +118,12 @@ blank editable document
 Ctrl+S save / save-as
 Ctrl+O open file list for the current directory
 F1 open the File menu
+F2 open the Edit menu
+F3 open the Select menu
+F1 then Right cycles through Edit and Select
 Ctrl+Z undo the last edit
+Ctrl+F open Find, then repeat the last find
+Shift+Arrows select text on the clean target
 ```
 
 Expected working keys:
@@ -116,23 +136,47 @@ Expected working keys:
 - arrow keys
 - Home and End
 - F1 File menu
+- F2 Edit menu, or F1 then Right
+- F3 Select menu, or F1 then Right twice
 - Ctrl+S save
 - Ctrl+O open
+- Ctrl+F find, then find next
 - Ctrl+Z undo
+- Ctrl+C copy current line
+- Ctrl+X cut current line
+- Ctrl+V paste internal clipboard
+- Shift+Arrow text selection on the clean target
 
-The File menu currently offers New, Open, Save, Save As, and Reboot. Dirty New,
-Open, and Reboot actions open an `Unsaved changes` popup with Cancel, Quit, and
-Save+Quit choices. On a clean buffer Reboot uses the Pico SDK watchdog reboot
-path. The Open screen sorts `..` first, directories before files, and names in
-case-insensitive ASCII order. It includes a right-side peek pane only when the
-selected file has text content to preview.
+The clean keyboard shim enables modifier reporting, samples the PicoCalc C64
+matrix for physical Shift, and reads the joystick register for horizontal arrow
+state. This is needed because Shift+Up/Down are reported as PageUp/PageDown by
+the keyboard firmware, while Shift+Left/Right do not have alternate shifted
+keycodes and regular Left/Right FIFO events can be suppressed while Shift is
+held.
+
+The File menu currently offers New, Open, Save, Save As, and Reboot. The Edit
+menu offers Undo, Cut Line, Copy Line, and Paste; Cut Line and Copy Line shorten
+to Cut and Copy when text is selected. The Select menu offers Find, Select All,
+and Select None. Clipboard contents live only inside the running Mothpad
+session. If text is selected, Copy and Cut use the selection; otherwise they
+fall back to the current line. Paste, selection deletion, and cut-line deletion
+undo as one grouped edit. Find uses a centered prompt, selects the found match,
+and repeats the last query on later Ctrl+F presses. Dirty New, Open, and
+Reboot actions open an `Unsaved changes`
+popup with Cancel, Quit, and Save+Quit choices. On a clean buffer Reboot uses
+the Pico SDK watchdog reboot path. The Open screen sorts `..` first, directories
+before files, and names in case-insensitive ASCII order. It includes a
+right-side peek pane only when the selected file has text content to preview.
 
 The top-right status uses private LCD glyph codes for a two-cell, 25%-step
-battery icon. Those glyphs are defined in `mothpad_picocalc_platform.h` and
+battery icon. The bottom-right status corner uses a two-cell moth logo. Boolean
+menu toggles use private checkbox glyphs from the same atlas. Those glyphs are
+defined in `mothpad_picocalc_platform.h` and
 rendered only by the PicoCalc platform shim; they are not file text and are not
 part of the core editor model. Normal text glyphs render as padded 5x7 shapes
 inside an 8x12 cell; private UI glyphs render stretched across the full 8x12
-cell so menu borders and battery halves can connect across adjacent cells.
+cell so menu borders, the moth logo, battery halves, and checkbox marks can use
+the whole cell.
 The editable source atlas for those private UI glyphs is
 `../../docs/glyph-previews/mothpad-ui-glyph-atlas-fullcell-raw.bmp`.
 The battery state is polled four times per second so the charging glyph can

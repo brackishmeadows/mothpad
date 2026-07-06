@@ -1,6 +1,7 @@
 #ifndef MOTHPAD_PICOCALC_PLATFORM_H
 #define MOTHPAD_PICOCALC_PLATFORM_H
 
+#include <stddef.h>
 #include <stdint.h>
 
 #define PICOCALC_LCD_WIDTH  320
@@ -31,6 +32,15 @@
 #define PICOCALC_GLYPH_BAT_R_50  ((char)0x8c)
 #define PICOCALC_GLYPH_BAT_R_100 ((char)0x8d)
 #define PICOCALC_GLYPH_BAT_CHARGE ((char)0x8e)
+#define PICOCALC_GLYPH_CHECKMARK ((char)0x8f)
+#define PICOCALC_GLYPH_CHECKBOX_OFF ((char)0x90)
+#define PICOCALC_GLYPH_CHECKBOX_ON  ((char)0x91)
+#define PICOCALC_GLYPH_RADIO_OFF ((char)0x92)
+#define PICOCALC_GLYPH_RADIO_ON  ((char)0x93)
+#define PICOCALC_GLYPH_ARROW_LEFT ((char)0x94)
+#define PICOCALC_GLYPH_MOTH_L    ((char)0x95)
+#define PICOCALC_GLYPH_MOTH_R    ((char)0x96)
+#define PICOCALC_GLYPH_SOLID     ((char)0x97)
 
 void picocalc_lcd_init(void);
 void picocalc_lcd_clear(void);
@@ -40,9 +50,14 @@ void picocalc_lcd_set_pixel_format(int bits_per_pixel);
 void picocalc_lcd_set_cursor(short x, short y);
 void picocalc_lcd_set_colors(int fg, int bg);
 void picocalc_lcd_put_char(char ch, int flush);
+void picocalc_lcd_draw_mono_bitmap(const uint8_t *bits, int width, int height, int stride, int fg, int bg);
 
 void picocalc_kbd_init(void);
 int picocalc_kbd_read_raw(uint16_t *out);
+int picocalc_kbd_read_matrix(uint8_t *out, size_t out_size);
+int picocalc_kbd_read_joystick(uint8_t *out);
+int picocalc_kbd_read_event(int *key, int *shift);
+int picocalc_kbd_shift_down(void);
 int picocalc_kbd_read(void);
 int picocalc_kbd_read_battery(int *percent, int *charging);
 

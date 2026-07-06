@@ -71,6 +71,10 @@ typedef struct {
     char ch;
     int cursor_before;
     int dirty_before;
+    int selection_active_before;
+    int selection_anchor_before;
+    int selection_cursor_before;
+    int group;
 } MothUndoRecord;
 
 typedef struct {
@@ -82,12 +86,19 @@ typedef struct {
     int scroll_col;
     int dirty;
     int read_only;
+    int soft_wrap;
+    int selection_active;
+    int selection_anchor;
+    int selection_cursor;
     MothMode mode;
     char path[256];
     MothLine lines[MOTH_MAX_LINES];
     int line_count;
     MothUndoRecord undo[MOTH_MAX_UNDO];
     int undo_count;
+    int undo_group;
+    int undo_group_depth;
+    int next_undo_group;
     MothCell cells[MOTH_COLS * MOTH_ROWS];
 } Mothpad;
 
@@ -97,12 +108,25 @@ MothStatus moth_set_text(Mothpad *m, const char *text);
 #ifndef MOTHPAD_NO_STDIO
 MothStatus moth_load_file(Mothpad *m, const char *path);
 MothStatus moth_save_file(Mothpad *m, const char *path);
+MothStatus moth_save_file_with_backup(Mothpad *m, const char *path, int keep_backup);
+MothStatus moth_write_recovery_file(const Mothpad *m, const char *path);
 #endif
 
 MothStatus moth_insert_char(Mothpad *m, char ch);
 MothStatus moth_insert_text(Mothpad *m, const char *text);
 MothStatus moth_join_path(char *dest, size_t dest_size, const char *dir, const char *name);
 MothStatus moth_undo(Mothpad *m);
+void moth_begin_undo_group(Mothpad *m);
+void moth_end_undo_group(Mothpad *m);
+void moth_clear_selection(Mothpad *m);
+void moth_begin_selection(Mothpad *m);
+void moth_update_selection(Mothpad *m);
+void moth_select_range(Mothpad *m, int start, int end);
+void moth_select_all(Mothpad *m);
+int moth_has_selection(const Mothpad *m);
+void moth_selection_bounds(const Mothpad *m, int *start, int *end);
+MothStatus moth_copy_selection(const Mothpad *m, char *dest, size_t dest_size, int *out_len);
+void moth_delete_selection(Mothpad *m);
 void moth_backspace(Mothpad *m);
 void moth_delete(Mothpad *m);
 
