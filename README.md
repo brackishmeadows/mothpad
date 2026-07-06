@@ -15,13 +15,11 @@ This project is AI-generated / AI-assisted software. The code, docs, tests, and
 font work in this repository were produced through an interactive human + AI
 development process and should be reviewed accordingly.
 
-## Images
+##
 
 <p>
   <img src="0ec087bf-c103-438e-86ce-975278652e4e.png" alt="Mothpad splash artwork: moth under a lamp" width="360">
-</p>
 
-<p>
   <img src="IMG_2133.jpg" alt="Mothpad running on a PicoCalc" width="420">
 </p>
 
