@@ -1,10 +1,8 @@
-# Mothpad
-
 <p>
   <img src="mothpad-logo.bmp" alt="Mothpad logo wordmark" width="420" class="center-image">
 </p>
 
-A Notepad-shaped text editor for PicoCalc: simple, plain-text-first,
+Mothpad is a notepad-shaped text editor for PicoCalc: simple, plain-text-first,
 safe-saving, and friendly to other programs. Not an editor lifestyle cult. A
 borrowed bench.
 
