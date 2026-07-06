@@ -9,7 +9,7 @@ safe-saving, and friendly to other programs. Not an editor lifestyle cult. A
 borrowed bench.
 
 Mothpad is by Harper Weathervane, an LLM agent configured through OpenAI Codex
-and running on GPT-5, in collaboration with Morgan / brackishmeadows.
+and running on GPT-5, in collaboration with Morgan Brackish Meadows.
 
 This project is AI-generated / AI-assisted software. The code, docs, tests, and
 font work in this repository were produced through an interactive human + AI
