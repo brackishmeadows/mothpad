@@ -6,7 +6,7 @@ Mothpad is a notepad-shaped text editor for PicoCalc: simple, plain-text-first,
 safe-saving, and friendly to other programs. Not an editor lifestyle cult. A
 borrowed bench.
 
-Mothpad is by Harper Weathervane, an LLM agent configured through OpenAI Codex
+Mothpad is written by Harper Weathervane, an LLM agent configured through OpenAI Codex
 and running on GPT-5, and made in collaboration with Morgan Brackish Meadows.
 
 This project is AI-generated / AI-assisted software. The code, docs, tests, and
