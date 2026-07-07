@@ -192,7 +192,7 @@ static void test_selection_copy_delete_and_render(void)
     CHECK(!moth_has_selection(&m));
 }
 
-static void test_tab_is_one_character(void)
+static void test_tab_is_one_character_two_cells_wide(void)
 {
     Mothpad m;
     moth_init(&m);
@@ -201,7 +201,11 @@ static void test_tab_is_one_character(void)
 
     CHECK(m.text_len == 1);
     CHECK(m.text[0] == '\t');
-    CHECK(moth_cursor_col(&m) == 1);
+    CHECK(moth_cursor_col(&m) == 2);
+    moth_render(&m);
+    CHECK(moth_cell_at(&m, 0, MOTH_TEXT_FIRST_ROW)->ch == ' ');
+    CHECK(moth_cell_at(&m, 1, MOTH_TEXT_FIRST_ROW)->ch == ' ');
+    CHECK((moth_cell_at(&m, 2, MOTH_TEXT_FIRST_ROW)->flags & MOTH_CELL_CURSOR) != 0);
 }
 
 static void test_join_path(void)
@@ -361,6 +365,54 @@ static void test_soft_wrap_rendering(void)
     CHECK(moth_cell_at(&m, 0, MOTH_TEXT_FIRST_ROW + 1)->ch == 'O');
 }
 
+static void test_soft_wrap_prefers_word_boundary(void)
+{
+    Mothpad m;
+
+    moth_init(&m);
+    CHECK(moth_set_text(&m, "one two three four five six seven eight nine ten") == MOTH_OK);
+    m.soft_wrap = 1;
+    moth_render(&m);
+
+    CHECK(moth_cell_at(&m, 0, MOTH_TEXT_FIRST_ROW)->ch == 'o');
+    CHECK(moth_cell_at(&m, 38, MOTH_TEXT_FIRST_ROW)->ch == 't');
+    CHECK(moth_cell_at(&m, 39, MOTH_TEXT_FIRST_ROW)->ch == ' ');
+    CHECK(moth_cell_at(&m, 0, MOTH_TEXT_FIRST_ROW + 1)->ch == 'n');
+}
+
+static void test_read_only_scroll_does_not_follow_cursor(void)
+{
+    Mothpad m;
+
+    moth_init(&m);
+    CHECK(moth_set_text(&m, "one\ntwo\nthree\nfour\n") == MOTH_OK);
+    m.read_only = 1;
+    moth_scroll_view(&m, 1);
+    moth_render(&m);
+
+    CHECK(moth_cell_at(&m, 0, MOTH_TEXT_FIRST_ROW)->ch == 't');
+    CHECK((moth_cell_at(&m, 0, MOTH_TEXT_FIRST_ROW)->flags & MOTH_CELL_CURSOR) == 0);
+
+    moth_cursor_to_view_top(&m);
+    CHECK(moth_cursor_line(&m) == 1);
+    CHECK(moth_cursor_col(&m) == 0);
+}
+
+static void test_read_only_soft_wrap_last_page_does_not_repeat_last_line(void)
+{
+    Mothpad m;
+
+    moth_init(&m);
+    CHECK(moth_set_text(&m, "one two three four five six seven eight nine ten") == MOTH_OK);
+    m.soft_wrap = 1;
+    m.read_only = 1;
+    moth_scroll_view(&m, 1);
+    moth_render(&m);
+
+    CHECK(moth_cell_at(&m, 0, MOTH_TEXT_FIRST_ROW)->ch == 'n');
+    CHECK(moth_cell_at(&m, 0, MOTH_TEXT_FIRST_ROW + 1)->ch == ' ');
+}
+
 static void test_recovery_file_does_not_mark_clean_or_clear_undo(void)
 {
     Mothpad m;
@@ -412,7 +464,7 @@ int main(void)
     test_undo_groups_text_operations();
     test_undo_replace_selection_restores_selection();
     test_selection_copy_delete_and_render();
-    test_tab_is_one_character();
+    test_tab_is_one_character_two_cells_wide();
     test_join_path();
     test_vertical_movement_clamps_column();
     test_find_wraps();
@@ -420,6 +472,9 @@ int main(void)
     test_safe_save_load();
     test_save_without_backup();
     test_soft_wrap_rendering();
+    test_soft_wrap_prefers_word_boundary();
+    test_read_only_scroll_does_not_follow_cursor();
+    test_read_only_soft_wrap_last_page_does_not_repeat_last_line();
     test_recovery_file_does_not_mark_clean_or_clear_undo();
 
     if(failures)

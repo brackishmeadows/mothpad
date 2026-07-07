@@ -87,6 +87,7 @@ typedef struct {
     int dirty;
     int read_only;
     int soft_wrap;
+    int tab_width;
     int selection_active;
     int selection_anchor;
     int selection_cursor;
@@ -136,6 +137,8 @@ void moth_cursor_up(Mothpad *m);
 void moth_cursor_down(Mothpad *m);
 void moth_cursor_home(Mothpad *m);
 void moth_cursor_end(Mothpad *m);
+void moth_scroll_view(Mothpad *m, int rows);
+void moth_cursor_to_view_top(Mothpad *m);
 
 int moth_cursor_line(const Mothpad *m);
 int moth_cursor_col(const Mothpad *m);

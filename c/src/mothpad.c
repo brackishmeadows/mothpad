@@ -254,6 +254,22 @@ static MothStatus moth_raw_delete_char(Mothpad *m, int pos)
     return MOTH_OK;
 }
 
+static int moth_effective_tab_width(const Mothpad *m)
+{
+    return (m && m->tab_width == 4) ? 4 : 2;
+}
+
+static int moth_char_visual_width(const Mothpad *m, char ch, int visual_col)
+{
+    if(ch == '\t')
+    {
+        int tab_width = moth_effective_tab_width(m);
+        int next = ((visual_col / tab_width) + 1) * tab_width;
+        return next - visual_col;
+    }
+    return 1;
+}
+
 static int moth_line_from_pos(const Mothpad *m, int pos)
 {
     if(!m || m->line_count <= 0) return 0;
@@ -268,13 +284,54 @@ static int moth_line_from_pos(const Mothpad *m, int pos)
     return m->line_count - 1;
 }
 
-static int moth_pos_from_line_col(const Mothpad *m, int line, int col)
+static int moth_text_col_to_visual_col(const Mothpad *m, int line, int text_col)
 {
+    int visual_col = 0;
+    int line_len;
+
     if(!m || m->line_count <= 0) return 0;
     line = moth_clamp_int(line, 0, m->line_count - 1);
-    int line_len = m->lines[line].end - m->lines[line].start;
-    col = moth_clamp_int(col, 0, line_len);
-    return m->lines[line].start + col;
+    line_len = m->lines[line].end - m->lines[line].start;
+    text_col = moth_clamp_int(text_col, 0, line_len);
+
+    for(int col = 0; col < text_col; ++col)
+    {
+        visual_col += moth_char_visual_width(m, m->text[m->lines[line].start + col], visual_col);
+    }
+
+    return visual_col;
+}
+
+static int moth_text_col_from_visual_col(const Mothpad *m, int line, int visual_col)
+{
+    int col = 0;
+    int line_len;
+    int current_visual = 0;
+
+    if(!m || m->line_count <= 0) return 0;
+    line = moth_clamp_int(line, 0, m->line_count - 1);
+    line_len = m->lines[line].end - m->lines[line].start;
+    if(visual_col <= 0) return 0;
+
+    while(col < line_len)
+    {
+        int width = moth_char_visual_width(m, m->text[m->lines[line].start + col], current_visual);
+        if(visual_col < current_visual + width) break;
+        current_visual += width;
+        ++col;
+    }
+
+    return col;
+}
+
+static int moth_pos_from_line_col(const Mothpad *m, int line, int col)
+{
+    int text_col;
+
+    if(!m || m->line_count <= 0) return 0;
+    line = moth_clamp_int(line, 0, m->line_count - 1);
+    text_col = moth_text_col_from_visual_col(m, line, col);
+    return m->lines[line].start + text_col;
 }
 
 static void moth_set_cursor_line_col(Mothpad *m, int line, int col)
@@ -282,10 +339,61 @@ static void moth_set_cursor_line_col(Mothpad *m, int line, int col)
     m->cursor = moth_pos_from_line_col(m, line, col);
 }
 
-static int moth_visual_rows_for_line_len(int line_len)
+static int moth_wrap_break_col(const Mothpad *m, int line, int start_col)
 {
-    if(line_len < 0) line_len = 0;
-    return (line_len / MOTH_COLS) + 1;
+    MothLine text_line;
+    int line_len;
+    int limit;
+    int break_col = -1;
+
+    if(!m || line < 0 || line >= m->line_count) return start_col + MOTH_COLS;
+    text_line = m->lines[line];
+    line_len = text_line.end - text_line.start;
+    if(start_col < 0) start_col = 0;
+    if(start_col >= line_len) return line_len;
+
+    limit = start_col + MOTH_COLS;
+    if(limit >= line_len) return line_len;
+
+    for(int col = start_col + 1; col <= limit; ++col)
+    {
+        char ch = m->text[text_line.start + col];
+        if(ch == ' ' || ch == '\t') break_col = col;
+    }
+
+    if(break_col > start_col)
+    {
+        int next = break_col;
+        while(next < line_len)
+        {
+            char ch = m->text[text_line.start + next];
+            if(ch != ' ' && ch != '\t') break;
+            ++next;
+        }
+        if(next > start_col) return next;
+    }
+
+    return limit;
+}
+
+static int moth_visual_rows_for_line(const Mothpad *m, int line)
+{
+    int rows = 1;
+    int col = 0;
+    int line_len;
+
+    if(!m || line < 0 || line >= m->line_count) return 1;
+    line_len = m->lines[line].end - m->lines[line].start;
+    while(col < line_len)
+    {
+        int next = moth_wrap_break_col(m, line, col);
+        if(next >= line_len) break;
+        if(next <= col) next = col + MOTH_COLS;
+        col = next;
+        ++rows;
+    }
+
+    return rows;
 }
 
 static int moth_visual_line_from_logical(const Mothpad *m, int logical_line, int col)
@@ -296,34 +404,54 @@ static int moth_visual_line_from_logical(const Mothpad *m, int logical_line, int
 
     for(int i = 0; i < logical_line; ++i)
     {
-        int line_len = m->lines[i].end - m->lines[i].start;
-        visual += moth_visual_rows_for_line_len(line_len);
+        visual += moth_visual_rows_for_line(m, i);
     }
 
     if(col < 0) col = 0;
-    visual += col / MOTH_COLS;
+    for(int start_col = 0;;)
+    {
+        int next = moth_wrap_break_col(m, logical_line, start_col);
+        if(col < next || next <= start_col) break;
+        if(next >= m->lines[logical_line].end - m->lines[logical_line].start) break;
+        start_col = next;
+        ++visual;
+    }
     return visual;
 }
 
-static void moth_logical_from_visual_line(const Mothpad *m, int visual, int *out_line, int *out_wrap)
+static int moth_wrap_start_col_for_visual(const Mothpad *m, int line, int visual_offset)
+{
+    int start_col = 0;
+
+    if(visual_offset <= 0) return 0;
+    for(int i = 0; i < visual_offset; ++i)
+    {
+        int next = moth_wrap_break_col(m, line, start_col);
+        if(next <= start_col) break;
+        start_col = next;
+    }
+
+    return start_col;
+}
+
+static void moth_logical_from_visual_line(const Mothpad *m, int visual, int *out_line, int *out_start_col)
 {
     int line = 0;
-    int wrap = 0;
+    int start_col = 0;
     if(!m || m->line_count <= 0)
     {
         if(out_line) *out_line = 0;
-        if(out_wrap) *out_wrap = 0;
+        if(out_start_col) *out_start_col = 0;
         return;
     }
 
     if(visual < 0) visual = 0;
     for(line = 0; line < m->line_count; ++line)
     {
-        int line_len = m->lines[line].end - m->lines[line].start;
-        int rows = moth_visual_rows_for_line_len(line_len);
+        int rows = moth_visual_rows_for_line(m, line);
         if(visual < rows)
         {
-            wrap = visual;
+            start_col = moth_wrap_start_col_for_visual(m, line, visual);
             break;
         }
         visual -= rows;
@@ -332,11 +460,46 @@ static void moth_logical_from_visual_line(const Mothpad *m, int visual, int *out
     if(line >= m->line_count)
     {
         line = m->line_count - 1;
-        wrap = moth_visual_rows_for_line_len(m->lines[line].end - m->lines[line].start) - 1;
+        start_col = moth_wrap_start_col_for_visual(m, line, moth_visual_rows_for_line(m, line) - 1);
     }
 
     if(out_line) *out_line = line;
-    if(out_wrap) *out_wrap = wrap;
+    if(out_start_col) *out_start_col = start_col;
+}
+
+static int moth_try_logical_from_visual_line(const Mothpad *m, int visual, int *out_line, int *out_start_col)
+{
+    int line = 0;
+    int start_col = 0;
+
+    if(!m || m->line_count <= 0 || visual < 0) return 0;
+    for(line = 0; line < m->line_count; ++line)
+    {
+        int rows = moth_visual_rows_for_line(m, line);
+        if(visual < rows)
+        {
+            start_col = moth_wrap_start_col_for_visual(m, line, visual);
+            if(out_line) *out_line = line;
+            if(out_start_col) *out_start_col = start_col;
+            return 1;
+        }
+        visual -= rows;
+    }
+
+    return 0;
+}
+
+static int moth_total_visual_rows(const Mothpad *m)
+{
+    int rows = 0;
+
+    if(!m || m->line_count <= 0) return 1;
+    for(int line = 0; line < m->line_count; ++line)
+    {
+        rows += moth_visual_rows_for_line(m, line);
+    }
+
+    return rows > 0 ? rows : 1;
 }
 
 static void moth_follow_cursor(Mothpad *m)
@@ -429,6 +592,7 @@ void moth_init(Mothpad *m)
     if(!m) return;
     memset(m, 0, sizeof(*m));
     m->mode = MOTH_MODE_EDITING;
+    m->tab_width = 2;
     moth_clear_undo(m);
     moth_rebuild_lines(m);
     moth_clear_cells(m);
@@ -817,6 +981,47 @@ void moth_cursor_end(Mothpad *m)
     m->preferred_col = moth_cursor_col(m);
 }
 
+void moth_scroll_view(Mothpad *m, int rows)
+{
+    int max_scroll;
+
+    if(!m) return;
+    if(m->soft_wrap)
+    {
+        max_scroll = moth_total_visual_rows(m) - 1;
+    }
+    else
+    {
+        max_scroll = m->line_count - 1;
+    }
+    if(max_scroll < 0) max_scroll = 0;
+
+    m->scroll_line = moth_clamp_int(m->scroll_line + rows, 0, max_scroll);
+    if(m->soft_wrap) m->scroll_col = 0;
+}
+
+void moth_cursor_to_view_top(Mothpad *m)
+{
+    int line;
+    int start_col;
+
+    if(!m || m->line_count <= 0) return;
+    if(m->soft_wrap)
+    {
+        moth_logical_from_visual_line(m, m->scroll_line, &line, &start_col);
+        line = moth_clamp_int(line, 0, m->line_count - 1);
+        start_col = moth_clamp_int(start_col, 0, m->lines[line].end - m->lines[line].start);
+        m->cursor = m->lines[line].start + start_col;
+    }
+    else
+    {
+        line = moth_clamp_int(m->scroll_line, 0, m->line_count - 1);
+        m->cursor = moth_pos_from_line_col(m, line, m->scroll_col);
+    }
+    moth_clear_selection(m);
+    m->preferred_col = moth_cursor_col(m);
+}
+
 int moth_cursor_line(const Mothpad *m)
 {
     return moth_line_from_pos(m, m ? m->cursor : 0);
@@ -826,7 +1031,7 @@ int moth_cursor_col(const Mothpad *m)
 {
     int line = moth_cursor_line(m);
     if(!m || m->line_count <= 0) return 0;
-    return m->cursor - m->lines[line].start;
+    return moth_text_col_to_visual_col(m, line, m->cursor - m->lines[line].start);
 }
 
 int moth_find_next(const Mothpad *m, const char *needle, int from_cursor)
@@ -851,7 +1056,7 @@ void moth_render(Mothpad *m)
     int has_selection = moth_has_selection(m);
     if(has_selection) moth_selection_bounds(m, &selection_start, &selection_end);
 
-    moth_follow_cursor(m);
+    if(!m->read_only) moth_follow_cursor(m);
     moth_clear_cells(m);
     moth_fill_row(m, MOTH_TOP_ROW, MOTH_COLOR_STATUS_FG, MOTH_COLOR_STATUS_BG, MOTH_CELL_STATUS);
     moth_fill_row(m, MOTH_BOTTOM_ROW, MOTH_COLOR_STATUS_FG, MOTH_COLOR_STATUS_BG, MOTH_CELL_STATUS);
@@ -863,34 +1068,55 @@ void moth_render(Mothpad *m)
     for(int row = 0; row < MOTH_TEXT_ROWS; ++row)
     {
         int line_index = m->scroll_line + row;
-        int wrap_index = 0;
         int line_start_col = m->scroll_col;
+        int line_end_col;
+        int screen_col = 0;
+        int visual_col;
         if(m->soft_wrap)
         {
-            moth_logical_from_visual_line(m, m->scroll_line + row, &line_index, &wrap_index);
-            line_start_col = wrap_index * MOTH_COLS;
+            if(!moth_try_logical_from_visual_line(m, m->scroll_line + row, &line_index, &line_start_col)) break;
         }
         else if(line_index >= m->line_count) break;
+        else
+        {
+            line_start_col = moth_text_col_from_visual_col(m, line_index, m->scroll_col);
+        }
 
         MothLine line = m->lines[line_index];
         int line_len = line.end - line.start;
         int visible = line_len - line_start_col;
         if(visible <= 0) continue;
-        visible = moth_min_int(visible, MOTH_COLS);
-
-        for(int col = 0; col < visible; ++col)
+        if(m->soft_wrap)
         {
-            int pos = line.start + line_start_col + col;
-            char ch = m->text[line.start + line_start_col + col];
+            line_end_col = moth_wrap_break_col(m, line_index, line_start_col);
+            visible = line_end_col - line_start_col;
+        }
+        visible = moth_min_int(visible, MOTH_COLS);
+        line_end_col = moth_min_int(line_start_col + visible, line_len);
+        visual_col = moth_text_col_to_visual_col(m, line_index, line_start_col);
+
+        for(int text_col = line_start_col; text_col < line_end_col && screen_col < MOTH_COLS; ++text_col)
+        {
+            int pos = line.start + text_col;
+            char ch = m->text[pos];
+            int width = moth_char_visual_width(m, ch, visual_col);
+            if(width < 1) width = 1;
             if(ch == '\t') ch = ' ';
             if(has_selection && pos >= selection_start && pos < selection_end)
             {
-                moth_put_cell(m, col, MOTH_TEXT_FIRST_ROW + row, (uint8_t)ch, MOTH_COLOR_BACK, MOTH_COLOR_TEXT, MOTH_CELL_SELECTION);
+                for(int i = 0; i < width && screen_col < MOTH_COLS; ++i)
+                {
+                    moth_put_cell(m, screen_col++, MOTH_TEXT_FIRST_ROW + row, (uint8_t)ch, MOTH_COLOR_BACK, MOTH_COLOR_TEXT, MOTH_CELL_SELECTION);
+                }
             }
             else
             {
-                moth_put_cell(m, col, MOTH_TEXT_FIRST_ROW + row, (uint8_t)ch, MOTH_COLOR_TEXT, MOTH_COLOR_BACK, 0);
+                for(int i = 0; i < width && screen_col < MOTH_COLS; ++i)
+                {
+                    moth_put_cell(m, screen_col++, MOTH_TEXT_FIRST_ROW + row, (uint8_t)ch, MOTH_COLOR_TEXT, MOTH_COLOR_BACK, 0);
+                }
             }
+            visual_col += width;
         }
     }
 
@@ -902,15 +1128,19 @@ void moth_render(Mothpad *m)
     int cursor_x;
     if(m->soft_wrap)
     {
-        cursor_y = MOTH_TEXT_FIRST_ROW + moth_visual_line_from_logical(m, moth_cursor_line(m), moth_cursor_col(m)) - m->scroll_line;
-        cursor_x = moth_cursor_col(m) % MOTH_COLS;
+        int cursor_line = moth_cursor_line(m);
+        int cursor_col = moth_cursor_col(m);
+        int cursor_start_col = 0;
+        moth_logical_from_visual_line(m, moth_visual_line_from_logical(m, cursor_line, cursor_col), NULL, &cursor_start_col);
+        cursor_y = MOTH_TEXT_FIRST_ROW + moth_visual_line_from_logical(m, cursor_line, cursor_col) - m->scroll_line;
+        cursor_x = cursor_col - moth_text_col_to_visual_col(m, cursor_line, cursor_start_col);
     }
     else
     {
         cursor_y = MOTH_TEXT_FIRST_ROW + moth_cursor_line(m) - m->scroll_line;
         cursor_x = moth_cursor_col(m) - m->scroll_col;
     }
-    MothCell *cursor = moth_mut_cell_at(m, cursor_x, cursor_y);
+    MothCell *cursor = m->read_only ? NULL : moth_mut_cell_at(m, cursor_x, cursor_y);
     if(cursor)
     {
         cursor->flags |= MOTH_CELL_CURSOR;

@@ -130,7 +130,7 @@ Expected working keys:
 
 - printable ASCII characters
 - Enter
-- Tab, inserted as a tab character
+- Tab, inserted as a literal tab character and displayed at two columns by default
 - Backspace
 - Delete
 - arrow keys
@@ -138,9 +138,15 @@ Expected working keys:
 - F1 File menu
 - F2 Edit menu, or F1 then Right
 - F3 Select menu, or F1 then Right twice
+- F4 View menu
+- F5 fullscreen calculator placeholder
+- Ctrl+N new
 - Ctrl+S save
 - Ctrl+O open
+- Ctrl+Q reboot
 - Ctrl+F find, then find next
+- Ctrl+A select all
+- Ctrl+D select none
 - Ctrl+Z undo
 - Ctrl+C copy current line
 - Ctrl+X cut current line
@@ -157,16 +163,26 @@ held.
 The File menu currently offers New, Open, Save, Save As, and Reboot. The Edit
 menu offers Undo, Cut Line, Copy Line, and Paste; Cut Line and Copy Line shorten
 to Cut and Copy when text is selected. The Select menu offers Find, Select All,
-and Select None. Clipboard contents live only inside the running Mothpad
+and Select None. F4 opens the View menu, which offers Wrap plus Edit Mode and
+Read Mode radio items. F5 opens a fullscreen calculator placeholder; Esc or F5
+returns to the editor. In Read Mode there is no cursor, Left/Right
+scroll one line, Up/Down scroll one page, and returning to Edit Mode places the
+cursor at the top of the visible text. Clipboard contents live only inside the running Mothpad
 session. If text is selected, Copy and Cut use the selection; otherwise they
 fall back to the current line. Paste, selection deletion, and cut-line deletion
 undo as one grouped edit. Find uses a centered prompt, selects the found match,
 and repeats the last query on later Ctrl+F presses. Dirty New, Open, and
 Reboot actions open an `Unsaved changes`
-popup with Cancel, Quit, and Save+Quit choices. On a clean buffer Reboot uses
-the Pico SDK watchdog reboot path. The Open screen sorts `..` first, directories
+popup with Cancel, Discard, and action-specific Save choices. On a clean buffer
+Reboot uses the Pico SDK watchdog reboot path. The Open screen sorts `..` first, directories
 before files, and names in case-insensitive ASCII order. It includes a
 right-side peek pane only when the selected file has text content to preview.
+
+Persistent settings are stored as plain text at `/.mothpad-settings.txt`.
+Currently persisted keys are `settings_version`, `keep_backups`, `soft_wrap`,
+`tab_insert_spaces`, and `tab_width`; default tabs are literal tab characters with width 2. Recovery autosave writes `/.mothpad-recovery.txt` plus
+`/.mothpad-recovery.meta`, which records the original file path. Opening,
+ignoring, or saving clears stale recovery files.
 
 The top-right status uses private LCD glyph codes for a two-cell, 25%-step
 battery icon. The bottom-right status corner uses a two-cell moth logo. Boolean

@@ -466,7 +466,7 @@ static const uint8_t *glyph8x12(unsigned char code)
     static const uint8_t radio_off[CELL_HEIGHT] = {0, 0, 0, 28, 34, 65, 65, 65, 34, 28, 0, 0};
     static const uint8_t radio_on[CELL_HEIGHT] = {0, 0, 0, 28, 34, 93, 93, 93, 34, 28, 0, 0};
     static const uint8_t arrow_left[CELL_HEIGHT] = {0, 0, 0, 32, 48, 56, 60, 56, 48, 32, 0, 0};
-    static const uint8_t moth_l[CELL_HEIGHT] = {0, 63, 49, 44, 61, 48, 32, 44, 32, 49, 63, 0};
+    static const uint8_t moth_l[CELL_HEIGHT] = {128, 191, 177, 172, 189, 176, 160, 172, 160, 177, 191, 128};
     static const uint8_t moth_r[CELL_HEIGHT] = {0, 254, 198, 154, 94, 6, 2, 26, 2, 70, 254, 0};
     static const uint8_t solid[CELL_HEIGHT] = {255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255};
 

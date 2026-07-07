@@ -80,12 +80,15 @@ and drew the Mothpad cell grid on the LCD. The next build added basic keyboard
 editing: printable characters, Enter, Tab, Backspace, Delete, arrows, Home, and
 End.
 
-Current file behavior: boots into a blank document, uses Ctrl+S for save/save-as,
-uses Ctrl+O for a current-directory file list, uses Ctrl+Z for bounded
+Current file behavior: boots into a blank document, uses Ctrl+N for new, Ctrl+S
+for save/save-as, Ctrl+O for a current-directory file list, Ctrl+Q for reboot,
+uses Ctrl+Z for bounded
 single-character undo, and keeps editing in memory if SD mount fails. F1 opens a
 small File menu for New, Open, Save, Save As, and Reboot. F2, or F1 then Right,
 opens an Edit menu for Undo, Cut Line, Copy Line, and Paste. F3, or F1 then
-Right twice, opens a Select menu for Find, Select All, and Select None. The
+Right twice, opens a Select menu for Find, Select All, and Select None; Ctrl+A
+selects all and Ctrl+D clears selection. F4 opens View. F5 opens a fullscreen
+calculator placeholder; Esc or F5 returns to the editor. The
 first clipboard is internal to the running app session. Shift+Arrow selection is
 wired through the clean keyboard shim; the clean target also explicitly enables
 keyboard modifier reporting with the documented default keyboard config and
@@ -98,14 +101,21 @@ the current line otherwise; menu labels shorten to Copy/Cut while a selection
 exists. Paste, selection deletion, and cut-line deletion undo as grouped edits.
 Find uses a centered prompt, selects the found match, and repeats the previous
 query on Ctrl+F. Dirty New, Open, and Reboot actions open an Unsaved Changes
-popup with Cancel, Quit, and Save+Quit choices. Dirty editing writes a single
+popup with Cancel, Discard, and action-specific Save choices. Dirty editing writes a single
 global recovery file, `/.mothpad-recovery.txt`, after 8 seconds of quiet input.
 On boot, Mothpad asks whether to open that recovery file. Opening it loads an
-unnamed dirty draft; manual save remains explicit.
+unnamed dirty draft with the original path restored from
+`/.mothpad-recovery.meta` when available, then clears the stale recovery files;
+manual save remains explicit. Ignoring recovery or saving also clears recovery
+text and metadata.
 File has a checkbox-glyph Keep Backups boolean item controlling `.bak` creation.
-View has checkbox-glyph Wrap and Write Lock toggles; F4 opens View and F5 toggles
-Write Lock. Write Lock blocks mutating edit actions while preserving navigation
-and copy.
+View has checkbox-glyph Wrap plus radio-glyph Edit Mode and Read Mode entries.
+Read Mode hides the cursor:
+Left/Right scroll one line, Up/Down scroll one page, and returning to Edit Mode
+places the cursor at the top of the visible text. Wrap and Keep Backups persist through `/.mothpad-settings.txt`.
+Tabs currently default to literal tab characters displayed at two columns; the same settings file supports
+`settings_version`, `tab_insert_spaces`, and `tab_width` until a settings dialog exists.
+Read Mode blocks mutating edit actions while preserving viewing and copy.
 The Open screen shows a right-side peek pane only when the selected file has
 text content to preview, with `..` first, directories before files, and
 case-insensitive ASCII name sorting. The top status row shows a private
