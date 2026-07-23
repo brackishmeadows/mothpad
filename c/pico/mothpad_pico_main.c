@@ -81,6 +81,7 @@ extern struct dirent *readdir(DIR *dir);
 #define PICO_CALC_EXPR_SIZE    80
 #define PICO_CALC_RESULT_SIZE  80
 #define PICO_CALC_HISTORY      8
+#define PICO_CALC_HISTORY_FIRST_ROW 16
 #define PICO_ARROW_INITIAL_MS 280
 #define PICO_ARROW_REPEAT_MS 90
 #define PICO_SHIFT_ARROW_INITIAL_MS 180
@@ -252,11 +253,12 @@ static char g_calc_expr[PICO_CALC_EXPR_SIZE];
 static int g_calc_expr_len;
 static int g_calc_cursor;
 static char g_calc_result[PICO_CALC_RESULT_SIZE] = "?";
-static char g_calc_status[40] = "Enter evaluates";
+static char g_calc_status[40] = "Enter stores";
 static char g_calc_history_expr[PICO_CALC_HISTORY][PICO_CALC_EXPR_SIZE];
 static char g_calc_history_result[PICO_CALC_HISTORY][PICO_CALC_RESULT_SIZE];
 static int g_calc_history_count;
 static int g_calc_history_recall = -1;
+static int g_calc_history_top = -1;
 
 static const char *g_file_menu_items[] = {
     "New",
@@ -1623,7 +1625,7 @@ static int pico_calc_eval_to_result(char *status, size_t status_size)
     if(!g_calc_expr[0])
     {
         snprintf(g_calc_result, sizeof(g_calc_result), "?");
-        snprintf(status, status_size, "Enter evaluates");
+        snprintf(status, status_size, "Enter stores");
         return 0;
     }
 
@@ -1668,6 +1670,7 @@ static void pico_calc_push_history(void)
     snprintf(g_calc_history_expr[g_calc_history_count], sizeof(g_calc_history_expr[0]), "%s", g_calc_expr);
     snprintf(g_calc_history_result[g_calc_history_count], sizeof(g_calc_history_result[0]), "%s", g_calc_result);
     ++g_calc_history_count;
+    if(g_calc_history_recall < 0) g_calc_history_top = g_calc_history_count - 1;
 }
 
 static void pico_calc_run(void)
@@ -1722,21 +1725,79 @@ static void pico_calc_delete(void)
     pico_calc_live_update();
 }
 
-static void pico_calc_recall_history(int delta)
+static int pico_calc_history_entry_rows(int history_index)
+{
+    char line[PICO_CALC_EXPR_SIZE + PICO_CALC_RESULT_SIZE + 4];
+    int width = MOTH_COLS - 2;
+    int length;
+
+    if(history_index < 0 || history_index >= g_calc_history_count) return 0;
+    snprintf(line,
+             sizeof(line),
+             "%s = %s",
+             g_calc_history_expr[history_index],
+             g_calc_history_result[history_index]);
+    length = (int)strlen(line);
+    return length > 0 ? (length + width - 1) / width : 1;
+}
+
+static int pico_calc_history_visible(int top, int selected)
+{
+    int rows = 0;
+    int available_rows = MOTH_BOTTOM_ROW - PICO_CALC_HISTORY_FIRST_ROW;
+
+    for(int history = top; history >= 0 && rows < available_rows; --history)
+    {
+        int entry_rows = pico_calc_history_entry_rows(history);
+        if(history == selected) return rows + entry_rows <= available_rows;
+        rows += entry_rows;
+    }
+    return 0;
+}
+
+static void pico_calc_ensure_history_visible(void)
+{
+    if(g_calc_history_recall < 0)
+    {
+        g_calc_history_top = g_calc_history_count - 1;
+        return;
+    }
+    if(g_calc_history_top < 0 || g_calc_history_top >= g_calc_history_count)
+    {
+        g_calc_history_top = g_calc_history_count - 1;
+    }
+    if(g_calc_history_recall > g_calc_history_top)
+    {
+        g_calc_history_top = g_calc_history_recall;
+    }
+    while(g_calc_history_top > g_calc_history_recall &&
+          !pico_calc_history_visible(g_calc_history_top, g_calc_history_recall))
+    {
+        --g_calc_history_top;
+    }
+}
+
+static void pico_calc_recall_history(int direction)
 {
     if(g_calc_history_count <= 0) return;
 
     if(g_calc_history_recall < 0)
     {
-        g_calc_history_recall = (delta < 0) ? g_calc_history_count - 1 : 0;
+        g_calc_history_recall = g_calc_history_count - 1;
     }
     else
     {
-        g_calc_history_recall += delta;
-        if(g_calc_history_recall < 0) g_calc_history_recall = g_calc_history_count - 1;
-        if(g_calc_history_recall >= g_calc_history_count) g_calc_history_recall = 0;
+        if(direction < 0 && g_calc_history_recall < g_calc_history_count - 1)
+        {
+            ++g_calc_history_recall;
+        }
+        else if(direction > 0 && g_calc_history_recall > 0)
+        {
+            --g_calc_history_recall;
+        }
     }
 
+    pico_calc_ensure_history_visible();
     pico_calc_set_expr(g_calc_history_expr[g_calc_history_recall]);
     snprintf(g_calc_result, sizeof(g_calc_result), "%s", g_calc_history_result[g_calc_history_recall]);
     snprintf(g_calc_status, sizeof(g_calc_status), "History");
@@ -1797,13 +1858,26 @@ static void pico_render_calc(void)
     {
         pico_draw_text(3, 13, g_calc_status, 7, 0, 0);
     }
-    pico_draw_text(2, 15, "History", 7, 0, 0);
-    for(int i = 0; i < 4 && i < g_calc_history_count; ++i)
+    pico_draw_text(2, PICO_CALC_HISTORY_FIRST_ROW - 1, "History", 7, 0, 0);
     {
-        int hist = g_calc_history_count - 1 - i;
-        char line[40];
-        snprintf(line, sizeof(line), "%s = %s", g_calc_history_expr[hist], g_calc_history_result[hist]);
-        pico_draw_text(2, 17 + i, line, hist == g_calc_history_recall ? 0 : 7, hist == g_calc_history_recall ? 7 : 0, hist == g_calc_history_recall ? MOTH_CELL_SELECTION : 0);
+        int row = PICO_CALC_HISTORY_FIRST_ROW;
+        int top = g_calc_history_top;
+        if(top < 0 || top >= g_calc_history_count) top = g_calc_history_count - 1;
+        for(int hist = top; hist >= 0 && row < MOTH_BOTTOM_ROW; --hist)
+        {
+            char line[PICO_CALC_EXPR_SIZE + PICO_CALC_RESULT_SIZE + 4];
+            int offset = 0;
+            int selected = hist == g_calc_history_recall;
+            snprintf(line, sizeof(line), "%s = %s", g_calc_history_expr[hist], g_calc_history_result[hist]);
+            while(line[offset] && row < MOTH_BOTTOM_ROW)
+            {
+                pico_draw_text_clipped(2, row, line + offset, MOTH_COLS - 2,
+                                       selected ? 0 : 7, selected ? 7 : 0,
+                                       selected ? MOTH_CELL_SELECTION : 0);
+                offset += MOTH_COLS - 2;
+                ++row;
+            }
+        }
     }
 #endif
 #ifdef PORTMANTEAU_DEMO
@@ -1817,7 +1891,7 @@ static void pico_render_calc(void)
         pico_draw_text(0, MOTH_BOTTOM_ROW, bottom, PICO_STATUS_FG, PICO_STATUS_BG, MOTH_CELL_STATUS);
     }
 #else
-    pico_draw_text(0, MOTH_BOTTOM_ROW, "Enter eval  Up/Dn hist  C clear  Esc/F5", PICO_STATUS_FG, PICO_STATUS_BG, MOTH_CELL_STATUS);
+    pico_draw_text(0, MOTH_BOTTOM_ROW, "Enter store  Up/Dn hist  C clear  Esc/F5", PICO_STATUS_FG, PICO_STATUS_BG, MOTH_CELL_STATUS);
 #endif
 }
 
