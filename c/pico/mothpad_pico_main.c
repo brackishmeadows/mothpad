@@ -80,8 +80,8 @@ extern struct dirent *readdir(DIR *dir);
 #define PICO_CLIPBOARD_SIZE    4096
 #define PICO_CALC_EXPR_SIZE    80
 #define PICO_CALC_RESULT_SIZE  80
-#define PICO_CALC_HISTORY      8
-#define PICO_CALC_HISTORY_FIRST_ROW 16
+#define PICO_CALC_HISTORY      128
+#define PICO_CALC_HISTORY_FIRST_ROW 15
 #define PICO_ARROW_INITIAL_MS 280
 #define PICO_ARROW_REPEAT_MS 90
 #define PICO_SHIFT_ARROW_INITIAL_MS 180
@@ -250,6 +250,8 @@ static int g_settings_version = 3;
 static int g_tab_insert_spaces = 0;
 static int g_tab_width = 2;
 static char g_calc_expr[PICO_CALC_EXPR_SIZE];
+static char g_calc_stored_expr[PICO_CALC_EXPR_SIZE];
+static int g_calc_stored_expr_active;
 static int g_calc_expr_len;
 static int g_calc_cursor;
 static char g_calc_result[PICO_CALC_RESULT_SIZE] = "?";
@@ -1677,9 +1679,25 @@ static void pico_calc_run(void)
 {
     if(pico_calc_eval_to_result(g_calc_status, sizeof(g_calc_status)))
     {
+        snprintf(g_calc_stored_expr, sizeof(g_calc_stored_expr), "%s", g_calc_expr);
         pico_calc_push_history();
+        pico_calc_set_expr(g_calc_result);
         g_calc_history_recall = -1;
+        g_calc_history_top = g_calc_history_count - 1;
+        g_calc_stored_expr_active = 1;
+        pico_set_message("Stored");
     }
+}
+
+static void pico_calc_copy_input(void)
+{
+    const char *expression = g_calc_stored_expr_active
+                           ? g_calc_stored_expr
+                           : g_calc_expr;
+
+    snprintf(g_clipboard, sizeof(g_clipboard), "%s = %s", expression, g_calc_result);
+    g_clipboard_len = (int)strlen(g_clipboard);
+    pico_set_message("Copied");
 }
 
 static void pico_calc_insert_char(char ch)
@@ -1698,6 +1716,7 @@ static void pico_calc_insert_char(char ch)
     g_calc_expr[g_calc_cursor++] = ch;
     ++g_calc_expr_len;
     g_calc_history_recall = -1;
+    g_calc_stored_expr_active = 0;
     pico_calc_live_update();
 }
 
@@ -1710,6 +1729,7 @@ static void pico_calc_backspace(void)
     --g_calc_cursor;
     --g_calc_expr_len;
     g_calc_history_recall = -1;
+    g_calc_stored_expr_active = 0;
     pico_calc_live_update();
 }
 
@@ -1722,6 +1742,7 @@ static void pico_calc_delete(void)
             (size_t)(g_calc_expr_len - g_calc_cursor));
     --g_calc_expr_len;
     g_calc_history_recall = -1;
+    g_calc_stored_expr_active = 0;
     pico_calc_live_update();
 }
 
@@ -1800,7 +1821,8 @@ static void pico_calc_recall_history(int direction)
     pico_calc_ensure_history_visible();
     pico_calc_set_expr(g_calc_history_expr[g_calc_history_recall]);
     snprintf(g_calc_result, sizeof(g_calc_result), "%s", g_calc_history_result[g_calc_history_recall]);
-    snprintf(g_calc_status, sizeof(g_calc_status), "History");
+    snprintf(g_calc_status, sizeof(g_calc_status), "OK");
+    g_calc_stored_expr_active = 0;
 }
 
 static void pico_render_calc(void)
@@ -1811,11 +1833,11 @@ static void pico_render_calc(void)
     pico_clear_cells();
     pico_fill_row(MOTH_TOP_ROW, PICO_STATUS_FG, PICO_STATUS_BG, MOTH_CELL_STATUS);
     pico_fill_row(MOTH_BOTTOM_ROW, PICO_STATUS_FG, PICO_STATUS_BG, MOTH_CELL_STATUS);
-    pico_draw_text(0, MOTH_TOP_ROW, " Calc ", PICO_STATUS_FG, PICO_STATUS_BG, MOTH_CELL_STATUS);
-    pico_draw_popup_box(1, 3, 38, 5);
-    pico_draw_popup_box(1, 9, 38, 5);
-    pico_draw_text(3, 3, " Input ", 7, 0, MOTH_CELL_STATUS);
-    pico_draw_text(3, 9, " Result ", 7, 0, MOTH_CELL_STATUS);
+    pico_draw_text(0, MOTH_TOP_ROW, " Mothulator ", PICO_STATUS_FG, PICO_STATUS_BG, MOTH_CELL_STATUS);
+    pico_draw_popup_box(1, 2, 38, 5);
+    pico_draw_popup_box(1, 8, 38, 5);
+    pico_draw_text(3, 2, " Input ", 7, 0, MOTH_CELL_STATUS);
+    pico_draw_text(3, 8, " Result ", 7, 0, MOTH_CELL_STATUS);
 
     {
         int start = 0;
@@ -1826,37 +1848,37 @@ static void pico_render_calc(void)
         int cursor = calc->cursor;
         if(expr_len > field_cols - 1) start = expr_len - (field_cols - 1);
         if(cursor < start) start = cursor;
-        pico_draw_text(3, 5, (const char *)calc->expr + start, 7, 0, 0);
+        pico_draw_text(3, 4, (const char *)calc->expr + start, 7, 0, 0);
         cursor_x = 3 + cursor - start;
 #else
         if(g_calc_expr_len > field_cols - 1) start = g_calc_expr_len - (field_cols - 1);
         if(g_calc_cursor < start) start = g_calc_cursor;
-        pico_draw_text(3, 5, g_calc_expr + start, 7, 0, 0);
+        pico_draw_text(3, 4, g_calc_expr + start, 7, 0, 0);
         cursor_x = 3 + g_calc_cursor - start;
 #endif
         if(cursor_x >= 37) cursor_x = 36;
-        pico_put_cell(cursor_x, 6, '_', 7, 0, MOTH_CELL_CURSOR);
+        pico_put_cell(cursor_x, 5, '_', 7, 0, MOTH_CELL_CURSOR);
     }
 
 #ifdef PORTMANTEAU_DEMO
-    pico_draw_text(3, 11, (const char *)calc->result, 7, 0, 0);
+    pico_draw_text(3, 10, (const char *)calc->result, 7, 0, 0);
     if(calc->status[0] && !(calc->status[0] == 'O' && calc->status[1] == 'K'))
     {
-        pico_draw_text(3, 13, (const char *)calc->status, 7, 0, 0);
+        pico_draw_text(3, 12, (const char *)calc->status, 7, 0, 0);
     }
-    pico_draw_text(2, 15, "History", 7, 0, 0);
+    pico_draw_text(2, 14, "History", 7, 0, 0);
     for(int i = 0; i < 4 && i < calc->history_count; ++i)
     {
         int hist = calc->history_count - 1 - i;
         char line[40];
         snprintf(line, sizeof(line), "%s = %s", (const char *)calc->history_expr[hist], (const char *)calc->history_result[hist]);
-        pico_draw_text(2, 17 + i, line, hist == calc->history_recall ? 0 : 7, hist == calc->history_recall ? 7 : 0, hist == calc->history_recall ? MOTH_CELL_SELECTION : 0);
+        pico_draw_text(2, 16 + i, line, hist == calc->history_recall ? 0 : 7, hist == calc->history_recall ? 7 : 0, hist == calc->history_recall ? MOTH_CELL_SELECTION : 0);
     }
 #else
-    pico_draw_text(3, 11, g_calc_result, 7, 0, 0);
+    pico_draw_text(3, 10, g_calc_result, 7, 0, 0);
     if(g_calc_status[0] && !(g_calc_status[0] == 'O' && g_calc_status[1] == 'K'))
     {
-        pico_draw_text(3, 13, g_calc_status, 7, 0, 0);
+        pico_draw_text(3, 12, g_calc_status, 7, 0, 0);
     }
     pico_draw_text(2, PICO_CALC_HISTORY_FIRST_ROW - 1, "History", 7, 0, 0);
     {
@@ -1871,10 +1893,16 @@ static void pico_render_calc(void)
             snprintf(line, sizeof(line), "%s = %s", g_calc_history_expr[hist], g_calc_history_result[hist]);
             while(line[offset] && row < MOTH_BOTTOM_ROW)
             {
-                pico_draw_text_clipped(2, row, line + offset, MOTH_COLS - 2,
-                                       selected ? 0 : 7, selected ? 7 : 0,
-                                       selected ? MOTH_CELL_SELECTION : 0);
-                offset += MOTH_COLS - 2;
+                char fragment[MOTH_COLS - 1];
+                int remaining = (int)strlen(line + offset);
+                int chunk = remaining < MOTH_COLS - 2 ? remaining : MOTH_COLS - 2;
+
+                memcpy(fragment, line + offset, (size_t)chunk);
+                fragment[chunk] = 0;
+                pico_draw_text(2, row, fragment,
+                               selected ? 0 : 7, selected ? 7 : 0,
+                               selected ? MOTH_CELL_SELECTION : 0);
+                offset += chunk;
                 ++row;
             }
         }
@@ -1891,7 +1919,8 @@ static void pico_render_calc(void)
         pico_draw_text(0, MOTH_BOTTOM_ROW, bottom, PICO_STATUS_FG, PICO_STATUS_BG, MOTH_CELL_STATUS);
     }
 #else
-    pico_draw_text(0, MOTH_BOTTOM_ROW, "Enter store  Up/Dn hist  C clear  Esc/F5", PICO_STATUS_FG, PICO_STATUS_BG, MOTH_CELL_STATUS);
+    if(pico_message_active()) pico_draw_bottom_message();
+    else pico_draw_text(0, MOTH_BOTTOM_ROW, "Enter store C copy Q clr Up/Dn Esc/F5", PICO_STATUS_FG, PICO_STATUS_BG, MOTH_CELL_STATUS);
 #endif
 }
 
@@ -4385,10 +4414,17 @@ static int pico_handle_calc_key(int key)
     }
     if(key == 'c' || key == 'C')
     {
+        pico_calc_copy_input();
+        return 1;
+    }
+    if(key == 'q' || key == 'Q')
+    {
         pico_calc_set_expr("");
         snprintf(g_calc_result, sizeof(g_calc_result), "?");
-        snprintf(g_calc_status, sizeof(g_calc_status), "Cleared");
+        snprintf(g_calc_status, sizeof(g_calc_status), "OK");
         g_calc_history_recall = -1;
+        g_calc_stored_expr_active = 0;
+        pico_set_message("Cleared");
         return 1;
     }
     if((key >= '0' && key <= '9') ||
