@@ -698,17 +698,40 @@ MothStatus moth_set_text(Mothpad *m, const char *text)
 #ifndef MOTHPAD_NO_STDIO
 MothStatus moth_load_file(Mothpad *m, const char *path)
 {
+    int ch;
+    int line_count = 1;
+    size_t byte_count = 0;
+
     if(!m || !path) return MOTH_ERR_BAD_ARGUMENT;
 
     FILE *file = fopen(path, "rb");
     if(!file) return MOTH_ERR_IO;
 
-    size_t read_count = fread(m->text, 1, MOTH_MAX_FILE_SIZE + 1, file);
-    int read_failed = ferror(file);
+    while((ch = fgetc(file)) != EOF)
+    {
+        if(++byte_count > MOTH_MAX_FILE_SIZE)
+        {
+            fclose(file);
+            return MOTH_ERR_FULL;
+        }
+        if(ch == '\n' && ++line_count > MOTH_MAX_LINES)
+        {
+            fclose(file);
+            return MOTH_ERR_LINE_LIMIT;
+        }
+    }
+
+    if(ferror(file) || fseek(file, 0, SEEK_SET) != 0)
+    {
+        fclose(file);
+        return MOTH_ERR_IO;
+    }
+
+    size_t read_count = fread(m->text, 1, byte_count, file);
+    int read_failed = ferror(file) || read_count != byte_count;
     fclose(file);
 
     if(read_failed) return MOTH_ERR_IO;
-    if(read_count > MOTH_MAX_FILE_SIZE) return MOTH_ERR_FULL;
 
     m->text[read_count] = 0;
     m->text_len = (int)read_count;

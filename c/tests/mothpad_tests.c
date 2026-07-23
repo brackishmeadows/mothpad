@@ -392,6 +392,32 @@ static void test_safe_save_load(void)
     remove(tmp_path);
 }
 
+static void test_load_line_limit_preserves_open_document(void)
+{
+    Mothpad m;
+    FILE *file;
+    char path[512];
+
+    test_temp_path(path, sizeof(path), "mothpad_test_line_limit.txt");
+    file = fopen(path, "wb");
+    CHECK(file != NULL);
+    if(!file) return;
+
+    for(int i = 0; i < MOTH_MAX_LINES; ++i) fputs("x\n", file);
+    fclose(file);
+
+    moth_init(&m);
+    CHECK(moth_set_text(&m, "keep this\n") == MOTH_OK);
+    snprintf(m.path, sizeof(m.path), "%s", "/previous.txt");
+
+    CHECK(moth_load_file(&m, path) == MOTH_ERR_LINE_LIMIT);
+    CHECK(strcmp(m.text, "keep this\n") == 0);
+    CHECK(strcmp(m.path, "/previous.txt") == 0);
+    CHECK(m.dirty == 0);
+
+    remove(path);
+}
+
 static void test_save_without_backup(void)
 {
     Mothpad m;
@@ -625,6 +651,7 @@ int main(void)
     test_find_wraps();
     test_render_status_and_cursor();
     test_safe_save_load();
+    test_load_line_limit_preserves_open_document();
     test_save_without_backup();
     test_soft_wrap_rendering();
     test_soft_wrap_prefers_word_boundary();
