@@ -6,6 +6,8 @@ to the PicoCalc LCD, accepts keyboard input, and can open/save files on the SD
 card.
 
 For the full verified build handoff, read `../../docs/build-handoff.md`.
+For the Duolith hardware proof ledger, read
+`../../../duolith/docs/proof-report.md`.
 
 ## Requirements
 
@@ -46,8 +48,7 @@ For Pico 2 / RP2350-style targets, assuming the installed SDK supports it:
 cmake -S picocalc\mothpad\c\pico -B picocalc\mothpad\c\pico\build-pico2 -DPICO_BOARD=pico2
 ```
 
-For Pico 2 W / RP2350 Wi-Fi style targets, which matches the local
-`Picoware-PicoCalcPico2W.uf2` naming:
+For Pico 2 W / RP2350 Wi-Fi style targets:
 
 ```powershell
 cmake -S picocalc\mothpad\c\pico -B picocalc\mothpad\c\pico\build-pico2w -DPICO_BOARD=pico2_w
@@ -60,7 +61,9 @@ cmake --build picocalc\mothpad\c\pico\build
 ```
 
 Expected output includes `mothpad_pico.uf2`, `mothpad_pico_legacy.uf2`, and
-diagnostic UF2s.
+diagnostic UF2s. Experimental/reference builds may also produce
+`foldarium.uf2`, `mothnote-experimental.uf2`, and the older
+`mothpad-experimental.uf2` two-core service sketch.
 
 Or use the wrapper:
 
@@ -81,6 +84,13 @@ That writes the tested UF2 to:
 picocalc\mothpad\c\pico\build-pico2_w_mothpad\mothpad_pico.uf2
 ```
 
+The same build directory may also contain the app-split/reference experiment:
+
+```text
+picocalc\mothpad\c\pico\build-pico2_w_mothpad\foldarium.uf2
+picocalc\mothpad\c\pico\build-pico2_w_mothpad\mothnote-experimental.uf2
+```
+
 ## Current Behavior
 
 The clean target is `mothpad_pico`. It initializes the Mothpad core, renders
@@ -90,15 +100,193 @@ path currently uses a `40x26` grid from 8x12 cells, and keypress redraws are
 diffed at the cell level instead of clearing the whole screen. It mounts the SD
 card at `/` through `pico-vfs` and does not format the card on mount failure.
 The top status row also shows the keyboard controller's battery percent when
-available.
+available. The normal editor footer is removed, and the title row uses a dark
+background plus smeared bold title text to reduce visible LCD persistence from
+the old static white bands.
+After 60 seconds without input, Mothpad starts a full-screen LCD scrub
+screensaver with larger moving black/white fields. The pattern changes between
+vertical, horizontal, and diagonal sweeps over time without whole-screen
+strobing. Any key wakes the editor and is not passed through as input.
 On boot, the clean target shows the embedded `mothpad-splash.png` artwork for
 about half a second before clearing into the editor or recovery prompt.
+
+The `mothpad-experimental.uf2` target is a two-core app/service sketch. Core 0
+still owns the editor, LCD, keyboard, and normal Mothpad UI. Core 1 launches a
+copied-out file-browser service (`mothpad_file_browser_app.c`) that performs a
+read-only root directory scan and then keeps a heartbeat/status alive. This is a
+prototype for external app surfaces; it is not the known-good hardware path and
+does not yet let both cores browse or mutate the filesystem concurrently.
+
+`foldarium.uf2` is now a benched standalone file browser reference target. It
+mounts the SD card, browses directories, and writes the selected file path to
+`/.foldarium-open`. `mothnote-experimental.uf2` is the editor-side companion:
+on boot it checks for that handoff file, opens the queued path if possible, and
+then deletes the handoff. Recovery prompt handling still wins over Foldarium, so
+an autosave recovery file is not silently skipped.
+
+Mothpad's embedded files surface provides Open, New Folder, Copy, Cut, Paste,
+Rename, Delete, and Cancel from its F1 file-action menu. `N/O/C/X/V/R/D` are
+menu-local accelerators. Ctrl+C copies the selected file item, Ctrl+X cuts the
+selected file or directory for move, and Ctrl+V pastes into the current folder.
+Copying directories and deleting non-empty directories are intentionally blocked
+in this first pass.
+
+This is deliberately a file handoff contract, not simultaneous app execution,
+and it is no longer the active product direction. Mothpad's embedded file
+surface is the canonical files app for now. Standalone Foldarium remains useful
+as reference code for file operations, handoff, and app-split experiments.
+
+This older launch flow is: boot Foldarium, select a file, boot Mothnote
+Experimental. It is a step toward separate UF2 apps that communicate through
+small SD-card contracts, not the current product path.
+
+The local Duolith UF2 Bootloader checkout at `picocalc/duolith-bootloader` is
+currently benched after hardware testing; use Pelrun's upstream `BOOT2350.uf2`
+for normal testing. The intended launch-file architecture note is
+`../../../duolith/docs/architecture.md`.
+
+`portmanteau-demo.uf2` is the first resident runtime experiment. It is a normal
+app launched by the loader, not part of the GPL loader fork. It keeps Mothnote
+resident, switches fullscreen into a Foldarium-like browser without rebooting,
+uses a small Duolith mailbox for slot state, and returns to Mothnote with a
+selected file handoff.
+
+`mothpad-duolith.uf2` is the named Mothpad-suite lab build. It still links the
+payloads into one UF2, but Mothpad, Foldarium, and the calculator now register
+through a small Duolith app context/suite module instead of being only ad hoc
+local modes. F5 foregrounds the calculator through the Duolith path, Ctrl+O
+foregrounds the Foldarium-style picker through the same path, and Esc/F5 returns
+to the Mothpad editor payload. Core 1 now runs a Duolith payload loop that
+tracks the active app id and publishes per-app payload heartbeats. The
+Calculator now owns the foreground more directly: while it is active, core 0
+parks the Mothpad UI loop and core 1 polls the keyboard, updates calculator
+state, and draws the calculator screen itself. Esc/F5 in the core-1 calculator
+releases the foreground back to Mothpad. This is cooperative LCD/keyboard bus
+ownership, not a protected arbiter. Foldarium still uses core 0 for its real
+file-browser logic, with core 1 only tracking its payload identity/heartbeat.
+This is not yet the final independent SD-loaded payload bundle, and Calculator
+is still linked into the same UF2 rather than loaded as a separate binary.
+
+`duolith-ram-slot-proof.uf2` is the first isolated Duolith hardware proof. Core
+0 owns the LCD/keyboard foreground and keeps a visible heartbeat. Core 1 runs a
+tiny RAM-resident payload A or B. Pressing any key resets core 1 and relaunches
+it at the other RAM-resident payload while core 0 keeps running. This proves
+core-1 relaunch with a surviving foreground core; it does not yet load an
+external app image from SD into RAM.
+
+`duolith-ram-image-proof.uf2` is the next Duolith hardware proof. Core 0 owns
+the LCD/keyboard foreground, copies an embedded assembler payload byte range
+into a reserved RAM slot, and launches core 1 at the copied RAM address. Each
+keypress resets core 1, overwrites the same RAM slot with the other payload
+image, and relaunches it. This proves a replaceable RAM image slot using
+embedded blobs; it still does not load payloads from SD.
+
+`duolith-slot0-replace-proof.uf2` tests the opposite direction. Core 1 owns the
+visible monitor and keyboard after launch. Core 0 runs from a copied RAM image
+in a slot-0 RAM buffer. Each keypress on core 1 requests the other slot-0 image;
+the running slot-0 payload cooperatively jumps through a loader trampoline,
+which overwrites the slot-0 RAM buffer and jumps into the replacement image.
+This proves cooperative slot-0 self-replacement while slot 1 remains alive; it
+does not prove hardware reset of core 0.
+
+The Duolith proof UF2s are intentionally asymmetric harnesses so the behavior is
+visible and debuggable. They are not the final ownership model. The target model
+is coequal slots: any compatible payload may run in either slot, and whichever
+slot remains alive should be able to act as the temporary host/root long enough
+to load, replace, or recover the other slot.
+
+`duolith-coequal-proof.uf2` is the first proof aimed at that coequal target. It
+uses one slot-neutral assembler payload ABI that reads its current core/slot id
+and indexes shared slot state. The proof starts with slot 0 as the visible host
+replacing slot 1. After the third keypress, the monitor is handed to slot 1 and
+slot 0 becomes a replaceable RAM payload; further keypresses let slot 1 host and
+replace slot 0. This proves both slots can run the same payload ABI and either
+alive slot can act as the temporary host in the test harness. It still uses
+embedded payload blobs, not SD-loaded app binaries.
+
+`duolith-sd-payload-proof.uf2` is the first SD-loaded payload proof. On first
+boot it mounts the SD card and creates `DUO_A.BIN` and `DUO_B.BIN` in the SD
+root if they are missing, using tiny embedded reference payloads. It then reads
+one of those files back from SD into a reserved RAM slot and launches core 1 at
+that loaded RAM image. Each keypress resets core 1, reads the other payload file
+from SD, overwrites the RAM slot, and relaunches core 1. This proves the
+SD-file -> RAM-slot -> execute path. It is still a core0-host/core1-payload
+harness, not the coequal bundle loader.
+
+`duolith-sd-slot0-proof.uf2` tests the same SD-file -> RAM-slot -> execute path
+for core 0. Core 1 owns the monitor/keyboard. Core 0 runs a RAM payload loaded
+from `DUO0_A.BIN` or `DUO0_B.BIN` at the SD root. Each keypress asks core 0 to
+swap; the running core-0 payload cooperatively jumps through a trampoline, which
+reads the requested file from SD, overwrites the core-0 RAM slot, and jumps into
+the replacement image. This proves cooperative SD-loaded core-0 replacement
+while core 1 remains alive. It does not prove forced hardware reset/relaunch of
+core 0.
+
+`duolith-sd-coequal-ui-proof.uf2` is the first proof of the intended foreground
+handoff shape. It creates `DUOC_A.BIN` and `DUOC_B.BIN` if missing, loads one
+payload from SD into each slot, and starts both slots running. The same payload
+image shape can run in either slot: it reads its current core id at runtime and
+uses shared slot tables rather than hard-coding slot 0 or slot 1. Only the
+foreground payload draws and reads the keyboard. Pressing any key requests the
+peer slot be replaced from SD, then transfers foreground/display/keyboard
+ownership to that peer. Repeated keypresses replace both slots in alternation
+while the foreground moves between them. This is still a harness: the SD payloads
+are tiny ABI stubs that call resident service functions, not full independent
+apps.
+
+`duolith-app-catalog-proof.uf2` is the first app-catalog-shaped Duolith proof.
+It creates Idle, Menu, Mothpad, Calculator, and Foldarium payload files on SD
+from separate source folders under `duolith/apps/`, starts Mothpad in slot 0
+with slot 1 empty, and opens the Menu payload into slot 1 when F5 needs a peer
+app. The menu can replace its own slot with one of the named app payloads. Q
+closes either foreground app into the Idle payload; dirty simulated apps require
+Y/N confirmation first. This still uses tiny ABI stubs plus resident C services;
+it is not yet full product app binaries, and it avoids truly dead cores by
+keeping closed slots alive as Idle.
+
+`portmanteau-pma-proof.uf2` is the first proof of the Portmanteau app-binary
+container. It seeds `.PMA` files on SD, validates a small header
+(magic/version/app id/entry offset/image size), copies the image portion into a
+RAM slot, and lets the payload call back through a tiny ABI table. It boots
+Mothpad as a PMA image, can open Menu into the peer slot with `M`, and Menu can
+replace its slot with Mothpad, Calculator, or Foldarium. The Menu PMA now owns
+its own menu UI and requests self-replacement through the ABI. Calculator is
+now built as a separate ARM C payload at
+`b-duolith/pma-calculator/calculator.pma`; copy it to `/apps/calculator.pma` on
+the SD card before selecting Calculator. It is linked for fixed RAM at
+`0x20080000`, clears its own `.bss`, receives the ABI pointer in `r0`, draws its
+own UI, and evaluates small integer expressions. Mothpad and Foldarium remain
+toy payloads assembled with the host UF2.
+
+`duolith-riscv-core1-proof.uf2` is the first RISC-V slot proof and has passed on
+hardware. It is still an ARM UF2 running the PicoCalc monitor on core 0, but it
+sets core 1's `ARCHSEL` bit to RISC-V, copies a tiny hand-encoded RV32I payload
+into RAM, launches core 1 at that RISC-V RAM image, and watches the payload
+update shared heartbeat state. Each keypress resets core 1 and relaunches the
+other RISC-V payload variant. This proof does not use a local RISC-V compiler;
+the payload words are encoded by the ARM monitor at runtime. It proves mixed
+ARM/RISC-V launch and RISC-V shared-memory heartbeat. It does not yet prove two
+RISC-V slots or SD-loaded RISC-V app binaries.
 
 Build outputs:
 
 ```text
 c/pico/build-pico2_w/mothpad_pico.uf2
 c/pico/build-pico2_w/mothpad_pico_legacy.uf2
+c/pico/build-pico2_w/foldarium.uf2
+c/pico/build-pico2_w/mothnote-experimental.uf2
+c/pico/build-pico2_w/portmanteau-demo.uf2
+c/pico/build-pico2_w/mothpad-duolith.uf2
+c/pico/build-pico2_w/duolith-ram-slot-proof.uf2
+c/pico/build-pico2_w/duolith-ram-image-proof.uf2
+c/pico/build-pico2_w/duolith-slot0-replace-proof.uf2
+c/pico/build-pico2_w/duolith-coequal-proof.uf2
+c/pico/build-pico2_w/duolith-sd-payload-proof.uf2
+c/pico/build-pico2_w/duolith-sd-slot0-proof.uf2
+c/pico/build-pico2_w/duolith-sd-coequal-ui-proof.uf2
+c/pico/build-pico2_w/duolith-app-catalog-proof.uf2
+c/pico/build-pico2_w/portmanteau-pma-proof.uf2
+c/pico/build-pico2_w/duolith-riscv-core1-proof.uf2
 ```
 
 `mothpad_pico.uf2` is verified on hardware with the clean LCD/keyboard path and
@@ -139,7 +327,7 @@ Expected working keys:
 - F2 Edit menu, or F1 then Right
 - F3 Select menu, or F1 then Right twice
 - F4 View menu
-- F5 fullscreen calculator placeholder
+- F5 fullscreen calculator
 - Ctrl+N new
 - Ctrl+S save
 - Ctrl+O open
@@ -164,8 +352,13 @@ The File menu currently offers New, Open, Save, Save As, and Reboot. The Edit
 menu offers Undo, Cut Line, Copy Line, and Paste; Cut Line and Copy Line shorten
 to Cut and Copy when text is selected. The Select menu offers Find, Select All,
 and Select None. F4 opens the View menu, which offers Wrap plus Edit Mode and
-Read Mode radio items. F5 opens a fullscreen calculator placeholder; Esc or F5
-returns to the editor. In Read Mode there is no cursor, Left/Right
+Read Mode radio items. F5 opens a fullscreen calculator with boxed input/result
+areas, live evaluation while typing, and per-session expression history.
+Enter or `=` commits an evaluation to history, Left/Right move within the input,
+Up/Down recall history, `C` clears the current input without clearing history,
+and Esc or F5 returns to the editor. Whole-number results render as integers;
+unclear or invalid results render as `?`. It supports basic `+`, `-`, `*`, `/`,
+`x`, decimal, and parenthesized expressions. In Read Mode there is no cursor, Left/Right
 scroll one line, Up/Down scroll one page, and returning to Edit Mode places the
 cursor at the top of the visible text. Clipboard contents live only inside the running Mothpad
 session. If text is selected, Copy and Cut use the selection; otherwise they

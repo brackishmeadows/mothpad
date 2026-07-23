@@ -28,6 +28,12 @@ void picocalc_lcd_put_char(char ch, int flush)
     lcd_put_char(ch, flush);
 }
 
+void picocalc_lcd_put_char_flags(char ch, int flags, int flush)
+{
+    (void)flags;
+    picocalc_lcd_put_char(ch, flush);
+}
+
 void picocalc_lcd_draw_mono_bitmap(const uint8_t *bits, int width, int height, int stride, int fg, int bg)
 {
     (void)bits;

@@ -45,6 +45,7 @@ typedef enum {
     MOTH_CELL_CURSOR = 0x01,
     MOTH_CELL_STATUS = 0x02,
     MOTH_CELL_SELECTION = 0x04,
+    MOTH_CELL_BOLD = 0x08,
 } MothCellFlags;
 
 typedef struct {

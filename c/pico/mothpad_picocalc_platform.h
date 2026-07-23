@@ -50,6 +50,7 @@ void picocalc_lcd_set_pixel_format(int bits_per_pixel);
 void picocalc_lcd_set_cursor(short x, short y);
 void picocalc_lcd_set_colors(int fg, int bg);
 void picocalc_lcd_put_char(char ch, int flush);
+void picocalc_lcd_put_char_flags(char ch, int flags, int flush);
 void picocalc_lcd_draw_mono_bitmap(const uint8_t *bits, int width, int height, int stride, int fg, int bg);
 
 void picocalc_kbd_init(void);

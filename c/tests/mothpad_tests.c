@@ -13,6 +13,15 @@ static int failures;
     } \
 } while(0)
 
+static int first_non_space_col(const Mothpad *m, int row)
+{
+    for(int col = 0; col < MOTH_COLS; ++col)
+    {
+        if(moth_cell_at(m, col, row)->ch != ' ') return col;
+    }
+    return -1;
+}
+
 static void test_temp_path(char *out, size_t out_size, const char *name)
 {
     const char *tmp = getenv("TMP");
@@ -34,6 +43,34 @@ static void test_insert_and_lines(void)
     CHECK(m.dirty == 1);
 }
 
+static void test_insert_past_line_limit_rolls_back(void)
+{
+    Mothpad m;
+    static char text[(MOTH_MAX_LINES * 2) + 1];
+    int pos = 0;
+
+    for(int i = 0; i < MOTH_MAX_LINES - 1; ++i)
+    {
+        text[pos++] = 'x';
+        text[pos++] = '\n';
+    }
+    text[pos++] = 'x';
+    text[pos] = 0;
+
+    moth_init(&m);
+    CHECK(moth_set_text(&m, text) == MOTH_OK);
+    CHECK(m.line_count == MOTH_MAX_LINES);
+    m.cursor = m.text_len;
+
+    CHECK(moth_insert_char(&m, '\n') == MOTH_ERR_LINE_LIMIT);
+    CHECK(strcmp(m.text, text) == 0);
+    CHECK(m.text_len == pos);
+    CHECK(m.line_count == MOTH_MAX_LINES);
+    CHECK(m.cursor == pos);
+    CHECK(m.dirty == 0);
+    CHECK(m.undo_count == 0);
+}
+
 static void test_backspace_joins_lines(void)
 {
     Mothpad m;
@@ -46,6 +83,20 @@ static void test_backspace_joins_lines(void)
     CHECK(strcmp(m.text, "abcdef") == 0);
     CHECK(m.cursor == 3);
     CHECK(m.line_count == 1);
+}
+
+static void test_backspace_deletes_only_previous_character(void)
+{
+    Mothpad m;
+    moth_init(&m);
+    CHECK(moth_set_text(&m, "abcd") == MOTH_OK);
+    m.cursor = 2;
+
+    moth_backspace(&m);
+
+    CHECK(strcmp(m.text, "acd") == 0);
+    CHECK(m.cursor == 1);
+    CHECK(moth_cursor_col(&m) == 1);
 }
 
 static void test_delete_joins_lines(void)
@@ -238,6 +289,29 @@ static void test_vertical_movement_clamps_column(void)
     CHECK(moth_cursor_col(&m) == 2);
 }
 
+static void test_soft_wrap_vertical_movement_uses_visual_rows(void)
+{
+    Mothpad m;
+    const char *line = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ";
+    moth_init(&m);
+    CHECK(moth_set_text(&m, line) == MOTH_OK);
+    m.soft_wrap = 1;
+    m.cursor = 5;
+    m.preferred_col = 5;
+
+    moth_cursor_down(&m);
+
+    CHECK(m.cursor == MOTH_COLS + 5);
+    CHECK(moth_cursor_line(&m) == 0);
+    CHECK(moth_cursor_col(&m) == MOTH_COLS + 5);
+
+    moth_cursor_up(&m);
+
+    CHECK(m.cursor == 5);
+    CHECK(moth_cursor_line(&m) == 0);
+    CHECK(moth_cursor_col(&m) == 5);
+}
+
 static void test_find_wraps(void)
 {
     Mothpad m;
@@ -264,8 +338,11 @@ static void test_render_status_and_cursor(void)
 
     cell = moth_cell_at(&m, 0, 0);
     CHECK(cell && cell->ch == '[' && (cell->flags & MOTH_CELL_STATUS));
+    CHECK(cell && (cell->flags & MOTH_CELL_BOLD));
     status_tail = moth_cell_at(&m, MOTH_COLS - 1, 0);
     CHECK(status_tail && status_tail->ch == ' ' && (status_tail->flags & MOTH_CELL_STATUS));
+    cell = moth_cell_at(&m, 0, MOTH_BOTTOM_ROW);
+    CHECK(cell && cell->ch == ' ' && cell->flags == 0);
     cell = moth_cell_at(&m, 1, MOTH_TEXT_FIRST_ROW);
     CHECK(cell && cell->ch == 'e' && (cell->flags & MOTH_CELL_CURSOR));
     CHECK(cell && cell->fg == 7 && cell->bg == 0);
@@ -380,6 +457,81 @@ static void test_soft_wrap_prefers_word_boundary(void)
     CHECK(moth_cell_at(&m, 0, MOTH_TEXT_FIRST_ROW + 1)->ch == 'n');
 }
 
+static void test_soft_wrap_hangs_leading_tab_indent(void)
+{
+    Mothpad m;
+
+    moth_init(&m);
+    CHECK(moth_set_text(&m, "\tabcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ") == MOTH_OK);
+    m.soft_wrap = 1;
+    moth_render(&m);
+
+    CHECK(moth_cell_at(&m, 0, MOTH_TEXT_FIRST_ROW)->ch == ' ');
+    CHECK(moth_cell_at(&m, 1, MOTH_TEXT_FIRST_ROW)->ch == ' ');
+    CHECK(moth_cell_at(&m, 2, MOTH_TEXT_FIRST_ROW)->ch == 'a');
+    CHECK(moth_cell_at(&m, 0, MOTH_TEXT_FIRST_ROW + 1)->ch == ' ');
+    CHECK(moth_cell_at(&m, 1, MOTH_TEXT_FIRST_ROW + 1)->ch == ' ');
+    CHECK(moth_cell_at(&m, 2, MOTH_TEXT_FIRST_ROW + 1)->ch == 'M');
+}
+
+static void test_soft_wrap_hangs_leading_tab_indent_across_many_rows(void)
+{
+    Mothpad m;
+
+    moth_init(&m);
+    CHECK(moth_set_text(&m, "\tone two three four five six seven eight nine ten eleven twelve thirteen fourteen fifteen sixteen") == MOTH_OK);
+    m.soft_wrap = 1;
+    moth_render(&m);
+
+    CHECK(moth_cell_at(&m, 0, MOTH_TEXT_FIRST_ROW + 1)->ch == ' ');
+    CHECK(moth_cell_at(&m, 1, MOTH_TEXT_FIRST_ROW + 1)->ch == ' ');
+    CHECK(moth_cell_at(&m, 0, MOTH_TEXT_FIRST_ROW + 2)->ch == ' ');
+    CHECK(moth_cell_at(&m, 1, MOTH_TEXT_FIRST_ROW + 2)->ch == ' ');
+    CHECK(first_non_space_col(&m, MOTH_TEXT_FIRST_ROW + 1) == 2);
+    CHECK(first_non_space_col(&m, MOTH_TEXT_FIRST_ROW + 2) == 2);
+}
+
+static void test_soft_wrap_hangs_leading_tab_indent_across_long_word(void)
+{
+    Mothpad m;
+
+    moth_init(&m);
+    CHECK(moth_set_text(&m, "\tabcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ") == MOTH_OK);
+    m.soft_wrap = 1;
+    moth_render(&m);
+
+    CHECK(first_non_space_col(&m, MOTH_TEXT_FIRST_ROW + 1) == 2);
+    CHECK(first_non_space_col(&m, MOTH_TEXT_FIRST_ROW + 2) == 2);
+}
+
+static void test_soft_wrap_hangs_leading_tab_indent_when_scrolled(void)
+{
+    Mothpad m;
+
+    moth_init(&m);
+    CHECK(moth_set_text(&m, "\tabcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ") == MOTH_OK);
+    m.soft_wrap = 1;
+    m.read_only = 1;
+    m.scroll_line = 2;
+    moth_render(&m);
+
+    CHECK(first_non_space_col(&m, MOTH_TEXT_FIRST_ROW) == 2);
+}
+
+static void test_soft_wrap_preserves_multiple_leading_spaces(void)
+{
+    Mothpad m;
+
+    moth_init(&m);
+    CHECK(moth_set_text(&m, "12345678901234567890123456789012345678  tailtailtailtail") == MOTH_OK);
+    m.soft_wrap = 1;
+    moth_render(&m);
+
+    CHECK(moth_cell_at(&m, 0, MOTH_TEXT_FIRST_ROW + 1)->ch == ' ');
+    CHECK(moth_cell_at(&m, 1, MOTH_TEXT_FIRST_ROW + 1)->ch == ' ');
+    CHECK(moth_cell_at(&m, 2, MOTH_TEXT_FIRST_ROW + 1)->ch == 't');
+}
+
 static void test_read_only_scroll_does_not_follow_cursor(void)
 {
     Mothpad m;
@@ -457,7 +609,9 @@ static void test_recovery_file_does_not_mark_clean_or_clear_undo(void)
 int main(void)
 {
     test_insert_and_lines();
+    test_insert_past_line_limit_rolls_back();
     test_backspace_joins_lines();
+    test_backspace_deletes_only_previous_character();
     test_delete_joins_lines();
     test_undo_insert_restores_clean_text();
     test_undo_backspace_and_delete();
@@ -467,12 +621,18 @@ int main(void)
     test_tab_is_one_character_two_cells_wide();
     test_join_path();
     test_vertical_movement_clamps_column();
+    test_soft_wrap_vertical_movement_uses_visual_rows();
     test_find_wraps();
     test_render_status_and_cursor();
     test_safe_save_load();
     test_save_without_backup();
     test_soft_wrap_rendering();
     test_soft_wrap_prefers_word_boundary();
+    test_soft_wrap_hangs_leading_tab_indent();
+    test_soft_wrap_hangs_leading_tab_indent_across_many_rows();
+    test_soft_wrap_hangs_leading_tab_indent_across_long_word();
+    test_soft_wrap_hangs_leading_tab_indent_when_scrolled();
+    test_soft_wrap_preserves_multiple_leading_spaces();
     test_read_only_scroll_does_not_follow_cursor();
     test_read_only_soft_wrap_last_page_does_not_repeat_last_line();
     test_recovery_file_does_not_mark_clean_or_clear_undo();

@@ -34,7 +34,7 @@ if (!$armGcc) {
     Write-Warning "arm-none-eabi-gcc is not on PATH. CMake may still find it if the Pico SDK toolchain is configured, but a normal shell will probably fail."
 }
 
-cmake -S $root -B $BuildDir "-DPICO_BOARD=$Board"
+cmake -S $root -B $BuildDir "-DPICO_BOARD=$Board" "-DCMAKE_OBJECT_PATH_MAX=128"
 if ($LASTEXITCODE -ne 0) {
     exit $LASTEXITCODE
 }

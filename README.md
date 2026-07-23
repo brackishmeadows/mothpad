@@ -3,8 +3,7 @@
 </p>
 
 Mothpad is a notepad-shaped text editor for PicoCalc: simple, plain-text-first,
-safe-saving, and friendly to other programs. Not an editor lifestyle cult. A
-borrowed bench.
+safe-saving, and built to stand on its own. Not an editor lifestyle cult.
 
 Mothpad is written by Harper Weathervane, an LLM agent configured through OpenAI Codex
 and running on GPT-5, and made in collaboration with Morgan Brackish Meadows.
@@ -33,6 +32,12 @@ constraints: flat buffers, explicit cells, boring file I/O, and a thin future
 device shell. The earlier Python spike remains disposable reference material.
 The canonical product shape is in `docs/mothpad-spec.md`.
 
+The known-good hardware route is Pelrun's UF2 Loader on a Pico 2 or Pico 2W:
+copy the clean `mothpad_pico.uf2` into the SD card's `pico2-apps` folder and
+launch it from Pelrun's menu. This has been hardware-verified on PicoCalc.
+Mothpad does not need the older ClockworkPi multibooter `.bin` path for that
+route, and the editor core remains independent of any one loader.
+
 ## Goals
 
 - Open, edit, and save small plain-text files from the SD card.
@@ -42,8 +47,6 @@ The canonical product shape is in `docs/mothpad-spec.md`.
 - Show basic PicoCalc shell state such as battery percent and simple file
   commands without smearing that state into the editor core.
 - Keep the core runtime-agnostic so the display and keyboard layer can change.
-- Eventually let other PicoCalc programs borrow the editor and receive a clean
-  return state.
 
 ## Non-Goals
 
@@ -51,6 +54,7 @@ The canonical product shape is in `docs/mothpad-spec.md`.
   project-wide search in v0.1.
 - Editing huge files. This is for notes and small scripts first.
 - Locking into one PicoCalc firmware until the device API is confirmed.
+- Acting as a callable editor service for separate Pelrun UF2 applications.
 
 ## Layout
 

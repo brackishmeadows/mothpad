@@ -655,7 +655,7 @@ void picocalc_lcd_set_colors(int fg, int bg)
     g_lcd_bg = bg;
 }
 
-void picocalc_lcd_put_char(char ch, int flush)
+void picocalc_lcd_put_char_flags(char ch, int flags, int flush)
 {
     uint8_t pixels[CELL_WIDTH * CELL_HEIGHT * 3];
     uint8_t fg[3];
@@ -665,6 +665,7 @@ void picocalc_lcd_put_char(char ch, int flush)
     int glyph_width;
     int pixel_bytes;
     int private_glyph;
+    int bold = flags & 1;
     (void)flush;
 
     if(ch == '\t') ch = ' ';
@@ -696,6 +697,10 @@ void picocalc_lcd_put_char(char ch, int flush)
                     {
                         lit = (glyph[gy] & (1 << (glyph_width - 1 - gx))) != 0;
                     }
+                    if(!lit && bold && gx > 0 && gx <= glyph_width)
+                    {
+                        lit = (glyph[gy] & (1 << (glyph_width - gx))) != 0;
+                    }
                 }
             }
             uint8_t *dst = &pixels[(y * CELL_WIDTH + x) * pixel_bytes];
@@ -714,6 +719,11 @@ void picocalc_lcd_put_char(char ch, int flush)
         g_lcd_x = 0;
         g_lcd_y += CELL_HEIGHT;
     }
+}
+
+void picocalc_lcd_put_char(char ch, int flush)
+{
+    picocalc_lcd_put_char_flags(ch, 0, flush);
 }
 
 void picocalc_kbd_init(void)

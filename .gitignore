@@ -1,5 +1,7 @@
 c/build/
 c/pico/build*/
+# Generated Duolith/PMA build tree; source remains under c/pico/.
+c/pico/b-duolith/
 refterm-read/
 backups/
 ../toolchains/
