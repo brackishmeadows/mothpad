@@ -254,6 +254,5 @@ moth_draw_cursor_overlay()
 moth_flush_cells()
 ```
 
-The current Python prototype can model this now, then the device version can
-rewrite it in C/MicroPython/PicoMite shape without architectural panic.
-
+The device implementation carries this model directly in C; no separate Python
+prototype is part of Mothpad.

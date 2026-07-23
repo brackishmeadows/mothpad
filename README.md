@@ -27,10 +27,9 @@ Status: active spike
 License status: no open-source license has been selected yet. See
 `LICENSE.md` and `THIRD_PARTY.md`.
 
-The implementation starts in C so the first architecture matches PicoCalc-scale
-constraints: flat buffers, explicit cells, boring file I/O, and a thin future
-device shell. The earlier Python spike remains disposable reference material.
-The canonical product shape is in `docs/mothpad-spec.md`.
+The implementation starts in C so the architecture matches PicoCalc-scale
+constraints: flat buffers, explicit cells, boring file I/O, and a thin device
+shell. The canonical product shape is in `docs/mothpad-spec.md`.
 
 The known-good hardware route is Pelrun's UF2 Loader on a Pico 2 or Pico 2W:
 copy the clean `mothpad_pico.uf2` into the SD card's `pico2-apps` folder and
@@ -66,7 +65,6 @@ route, and the editor core remains independent of any one loader.
   a fallback only.
 - `LICENSE.md` - current Mothpad project license status.
 - `THIRD_PARTY.md` - current third-party and licensing notes.
-- `src/editor_core.py` - old Python spike, reference only.
 - `docs/mothpad-spec.md` - canonical product and architecture spec.
 - `docs/build-handoff.md` - exact host/Pico build process for future agents.
 - `docs/status.md` - continuity note and next honest moves.
@@ -83,12 +81,3 @@ Install the Raspberry Pi Pico SDK, set `PICO_SDK_PATH`, then see
 `c/pico/README.md`. The clean target is `mothpad_pico.uf2`; use
 `mothpad_pico_legacy.uf2` only as a fallback while the clean driver keeps
 working.
-
-## Run Python Spike Tests
-
-```powershell
-python -m unittest discover -s picocalc\mothpad\tests
-```
-
-If the system `python` is not available, use the embedded Python in
-`tools/python-3.13.13-embed-amd64/python.exe`.
